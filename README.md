@@ -4,10 +4,10 @@ A python package for studying complete intersections in products of projective s
 There is also some basic functionality for studying branched covers.
 The goal is to carry out some quick computations and search for interesting examples.
 There are many existing packages which deal with varieties in a single projective space,
-and looking at varieties in products yields 
+and looking at varieties in products yields more examples.
 
 Currently, the package can compute Chern numbers of these varieties.
-It can also compute Chern numbers of branched covers of these varieties,
+It can also compute Chern numbers of branched covers
 when the branch locus is another complete intersection.
 
 Users are warned that the computational results have not been rigorously tested,
