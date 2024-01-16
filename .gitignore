@@ -6,3 +6,5 @@ Pipfile.lock
 # Do not store the pickly stuff of nohup outfiles
 *.pk
 *.out
+# So I don't have to update this everytime I change computers...
+Pipfile

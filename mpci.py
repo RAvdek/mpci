@@ -24,10 +24,9 @@ class MultiProj(object):
             self.volume *= self.vars[i] ** d
         self.chern = self.truncate(self.chern)
 
-    @staticmethod
-    def c_to_dict(c):
+    def c_to_dict(self, c):
         """Turns cohomology class into dict"""
-        return sympy.Poly(c).as_dict()
+        return sympy.Poly(c, *self.vars).as_dict()
 
     def dict_to_c(self, d):
         """Turns dict into cohomology class"""
