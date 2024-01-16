@@ -57,9 +57,9 @@ class MultiProj(object):
 
     def get_line_inv(self, deg):
         """Returns inverse of total Chern class of a line bundle specified by its (multi)degree"""
-        output = 0
+        output = 1
         c_1_line = sum([d*self.vars[i] for i, d in enumerate(deg)])
-        for i in range(self.total_dim + 1):
+        for i in range(1, self.total_dim + 1):
             output += (-c_1_line) ** i
         return self.truncate(output.as_poly())
 
