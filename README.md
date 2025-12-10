@@ -67,6 +67,19 @@ Poly(3*x_0**2 + 3*x_0 + 1, x_0, domain='ZZ')
 {(1, 1): 18, (2,): 90}
 ```
 
+New functionality computes the ring structure of weighted projective spaces following Kawasaki "Cohomology of twisted projective lens spaces". According to that paper, the additive cohomology has one generator `g_k` of degree 2k for each k. We warn that this code is neither highly optimized, nor tested.
+```
+>>> # create a dim=2 WPS with weight vector [1,1,3]
+>>> wps = mpci.WPS([1,1,3]).coefs
+[3]
+```
+Here the output means that `g_1 * g_1 = 3 * g_2`.
+```
+>>> mpci.WPS([1,2,3,4,5]).coefs
+[30, 60, 60]
+```
+The output here means that `g_1 * g_1 = 30 * g_2`, `g_1 * g_2 = 60 * g_3`, and `g_1 * g_3 = 60 * g_4`.
+
 # Installation
 
 The project only requires `sympy`. To install it in a virtual environment...

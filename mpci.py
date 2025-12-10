@@ -1,3 +1,5 @@
+import math
+from itertools import combinations
 import sympy
 
 def all_partitions(n):
@@ -8,6 +10,31 @@ def all_partitions(n):
         for j in all_partitions(n - i):
             answer.add(tuple(sorted((i, ) + j)))
     return answer
+
+
+class WPS(object):
+    """Weighted projective space"""
+
+    def __init__(self, weights):
+        self.weights = weights
+        self.dim = len(weights) - 1
+        self.lbk = {k: self._get_lbk(k) for k in range(1, len(weights))}
+        self.coefs = [self.lbk[1] * self.lbk[k] // self.lbk[k+1] for k in range(1,self.dim)]
+
+    def _get_lbk(self, k):
+        subweights = list(combinations(self.weights, k+1))
+        numbers = [math.prod(sw)//math.gcd(*sw) for sw in subweights]
+        return math.lcm(*numbers)
+
+    def get_lbk(self, k):
+        """Returns l^{b}_{k} in the notation of Kawasaki"""
+        return self.lbk[k]
+
+    def get_coeffs(self):
+        """Returns coefficients c_{k} satisfying gamma_1 * gamma_k = c_k * gamma_{k+1}
+        in the notation of Kawasaki"""
+        return self.coefs
+
 
 class MultiProj(object):
     """Product of projective spaces"""
