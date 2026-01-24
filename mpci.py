@@ -1,6 +1,8 @@
 import math
 from itertools import combinations
+import numpy as np
 import sympy
+
 
 def all_partitions(n):
     """Returns all partitions of a positive integer n"""
@@ -10,6 +12,27 @@ def all_partitions(n):
         for j in all_partitions(n - i):
             answer.add(tuple(sorted((i, ) + j)))
     return answer
+
+
+def num_inverse(n, coeff_mod):
+    if coeff_mod == 0:
+        return sympy.Rational(n)**(-1)
+    return pow(n, -1, coeff_mod)
+
+
+def prod(array):
+    """Take a product of a list of algebraic objects.
+    Annoyingly, math.prod missing from some versions of python...
+
+    :param array: list
+    :return: obj
+    """
+    if len(array) == 0:
+        return 1
+    output = array.pop(0)
+    while len(array) > 0:
+        output *= array.pop(0)
+    return output
 
 
 class WPS(object):
@@ -99,7 +122,7 @@ class MultiProj(object):
 
 
 class CompIntersection(object):
-    """Complete intersection"""
+    """Complete intersection in a product of projective spaces"""
 
     def __init__(self, mp, degs):
         """To view a multiprojective space as a complete intersection, set degs = []
@@ -200,3 +223,38 @@ class CompIntersection(object):
             c_part = branch_order * self.get_chern_number(part) + delta_number
             output[part] = c_part
         return output
+
+
+def get_euler_only(n):
+    """Find the generator of Omega^{U}_{2n} such that all Chern numbers are zero except for c_{n}
+
+    The output is a pair (int_generator, euler) where...
+    - int_generator a dict {partition: coeff} describing a linear combination of products of projective space
+    - euler is the euler characteristic of the generator
+
+    The linear algebra here is borrowed from...
+    https://stackoverflow.com/questions/53921654/fast-computation-of-integer-basis-for-kernel-of-a-matrix-using-gpu
+    """
+    assert n > 1
+    parts = [p for p in all_partitions(n)]
+    # compute all of the chern numbers of all products of projective spaces having total
+    # dimension n. These give the generators of the complex bordism group Omega^{U}_{n}.
+    chern_numbers = {p: CompIntersection(MultiProj(list(p)), []).get_all_chern_numbers() for p in parts}
+    # put these into a matrix with each column corresponding to a chern number other than c_n
+    # each row corresponds to a product of projective spaces
+    m = [[chern_numbers[p_0][p_1] for p_0 in parts] for p_1 in parts if not p_1 == (n,)]
+    # the kernel will have rank 1
+    nullspace = sympy.Matrix(m).nullspace()
+    assert len(nullspace) == 1
+    # get the generator as a list of sympy fractions
+    rational_generator = list(nullspace[0].T)
+    # get the lcm of the denomenators
+    lcm_denom = sympy.lcm([x.denominator for x in rational_generator])
+    int_generator = [int(lcm_denom * x) for x in rational_generator]
+    # ensure that the gcd is 1
+    assert sympy.gcd(int_generator) == 1
+    # convert to a dictionary mapping partitions (indexing products of projective spaces) to coefficients
+    int_generator = {parts[i]: int_generator[i] for i in range(len(parts))}
+    # compute euler number of the generator
+    euler = sum([int_generator[p] * chern_numbers[p][(n,)] for p in parts])
+    return int_generator, euler

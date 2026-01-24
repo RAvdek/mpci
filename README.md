@@ -1,7 +1,6 @@
 # MPCI: Multi-projective Complete Intersections
 
 A python package for studying complete intersections in products of projective spaces.
-There is also some basic functionality for studying branched covers.
 The goal is to carry out some quick computations and search for interesting examples.
 There are many existing packages which deal with varieties in a single projective space,
 and looking at varieties in products yields more examples.
@@ -9,6 +8,10 @@ and looking at varieties in products yields more examples.
 Currently, the package can compute Chern numbers of these varieties.
 It can also compute Chern numbers of branched covers
 when the branch locus is another complete intersection.
+
+There is also some functionality for studying numerical properties
+of weighted projective spaces and the complex cobordism ring.
+See the examples below.
 
 Users are warned that the computational results have not been rigorously tested,
 only checked against examples which I've worked out by hand.
@@ -67,7 +70,10 @@ Poly(3*x_0**2 + 3*x_0 + 1, x_0, domain='ZZ')
 {(1, 1): 18, (2,): 90}
 ```
 
-New functionality computes the ring structure of weighted projective spaces following Kawasaki "Cohomology of twisted projective lens spaces". According to that paper, the additive cohomology has one generator `g_k` of degree 2k for each k. We warn that this code is neither highly optimized, nor tested.
+Additional functionality computes the ring structure of weighted projective spaces 
+following Kawasaki "Cohomology of twisted projective lens spaces". 
+According to that paper, the additive cohomology has one generator `g_k` 
+of degree 2k for each k. We warn that this code is neither highly optimized, nor tested.
 ```
 >>> # create a dim=2 WPS with weight vector [1,1,3]
 >>> wps = mpci.WPS([1,1,3]).coefs
@@ -79,6 +85,20 @@ Here the output means that `g_1 * g_1 = 3 * g_2`.
 [30, 60, 60]
 ```
 The output here means that `g_1 * g_1 = 30 * g_2`, `g_1 * g_2 = 60 * g_3`, and `g_1 * g_3 = 60 * g_4`.
+
+The function `get_euler_only(n)` will return the generator `X` of the complex cobordism ring `Omega^{U}_{2n}`
+which has all Chern numbers vanishing except for the Euler characteristic, presented as a linear
+combination of products of projective spaces, together with `chi(X)`.
+```
+>>> mpci.get_euler_only(2)
+({(1, 1): -9, (2,): 8}, -12)
+```
+This means that for `n=2`, `X = -9[P^1 * P^1] + 8[P^3]` and that `chi(X)=-12`.
+```
+>>> mpci.get_euler_only(3)
+({(1, 2): -8, (3,): 3, (1, 1, 1): 5}, 4)
+```
+This means that for `n=3`, `X = -8[P^1 * P^2] + 3[P^3] + 5[P^1 * P^1 * P^1]` and that `chi(X)=4`.
 
 # Installation
 
