@@ -235,16 +235,17 @@ def get_euler_only(n):
     The linear algebra here is borrowed from...
     https://stackoverflow.com/questions/53921654/fast-computation-of-integer-basis-for-kernel-of-a-matrix-using-gpu
     """
+    _EULER_INDEX = (n,)
     assert n > 1
     parts = [p for p in all_partitions(n)]
     # compute all of the chern numbers of all products of projective spaces having total
     # dimension n. These give the generators of the complex bordism group Omega^{U}_{n}.
     chern_numbers = {p: CompIntersection(MultiProj(list(p)), []).get_all_chern_numbers() for p in parts}
-    # put these into a matrix with each column corresponding to a chern number other than c_n
-    # each row corresponds to a product of projective spaces
-    m = [[chern_numbers[p_0][p_1] for p_0 in parts] for p_1 in parts if not p_1 == (n,)]
+    # put these into a matrix with each row corresponding to a chern number other than c_n
+    # each column corresponds to a product of projective spaces
+    m = [[chern_numbers[var][ind] for ind in parts if not ind==_EULER_INDEX] for var in parts]
     # the kernel will have rank 1
-    nullspace = sympy.Matrix(m).nullspace()
+    nullspace = sympy.Matrix(m).T.nullspace()
     assert len(nullspace) == 1
     # get the generator as a list of sympy fractions
     rational_generator = list(nullspace[0].T)
@@ -255,6 +256,10 @@ def get_euler_only(n):
     assert sympy.gcd(int_generator) == 1
     # convert to a dictionary mapping partitions (indexing products of projective spaces) to coefficients
     int_generator = {parts[i]: int_generator[i] for i in range(len(parts))}
-    # compute euler number of the generator
-    euler = sum([int_generator[p] * chern_numbers[p][(n,)] for p in parts])
+    # compute chern number of the generator
+    special_cherns = {ind: sum([int_generator[p] * chern_numbers[p][ind] for p in parts]) for ind in parts}
+    for p in parts:
+        if not p == _EULER_INDEX:
+            assert special_cherns[p] == 0
+    euler = special_cherns[_EULER_INDEX]
     return int_generator, euler
