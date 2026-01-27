@@ -226,7 +226,29 @@ class CompIntersection(object):
 
 
 def get_euler_only(n):
-    """Find the generator of Omega^{U}_{2n} such that all Chern numbers are zero except for c_{n}
+    """WARNING: This function is broken...
+    The following code says that there is a linear combination of  CY 3-folds with chi=2
+    %>>> mpci.CompIntersection(mpci.MultiProj([4]), [[5]]).get_all_chern_numbers()
+    [5]
+    {(1, 2): 0, (3,): -200, (1, 1, 1): 0}
+    %>>> mpci.CompIntersection(mpci.MultiProj([1,3]), [[2,4]]).get_all_chern_numbers()
+    [2, 4]
+    {(1, 2): 0, (3,): -168, (1, 1, 1): 0}
+    %>>> mpci.CompIntersection(mpci.MultiProj([1,1,2]), [[2,2,3]]).get_all_chern_numbers()
+    [2, 2, 3]
+    {(1, 2): 0, (3,): -144, (1, 1, 1): 0}
+    %>>> mpci.CompIntersection(mpci.MultiProj([2,2]), [[3,3]]).get_all_chern_numbers()
+    [3, 3]
+    {(1, 2): 0, (3,): -162, (1, 1, 1): 0}
+    %>>> mpci.CompIntersection(mpci.MultiProj([1,1,1,1]), [[2,2,2,2]]).get_all_chern_numbers()
+    [2, 2, 2, 2]
+    {(1, 2): 0, (3,): -128, (1, 1, 1): 0}
+    %>>> import sympy
+    %>>> sympy.gcd([200,168,144,162,128])
+    2
+    However, my linear algebra approach computed that the manifold of interest has chi=4...
+
+    Find the generator of Omega^{U}_{2n} such that all Chern numbers are zero except for c_{n}
 
     The output is a pair (int_generator, euler) where...
     - int_generator a dict {partition: coeff} describing a linear combination of products of projective space
@@ -241,9 +263,11 @@ def get_euler_only(n):
     # compute all of the chern numbers of all products of projective spaces having total
     # dimension n. These give the generators of the complex bordism group Omega^{U}_{n}.
     chern_numbers = {p: CompIntersection(MultiProj(list(p)), []).get_all_chern_numbers() for p in parts}
+    print(chern_numbers)
     # put these into a matrix with each row corresponding to a chern number other than c_n
     # each column corresponds to a product of projective spaces
     m = [[chern_numbers[var][ind] for ind in parts if not ind==_EULER_INDEX] for var in parts]
+    print(sympy.Matrix(m).T)
     # the kernel will have rank 1
     nullspace = sympy.Matrix(m).T.nullspace()
     assert len(nullspace) == 1

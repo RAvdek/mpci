@@ -86,20 +86,6 @@ Here the output means that `g_1 * g_1 = 3 * g_2`.
 ```
 The output here means that `g_1 * g_1 = 30 * g_2`, `g_1 * g_2 = 60 * g_3`, and `g_1 * g_3 = 60 * g_4`.
 
-The function `get_euler_only(n)` will return the generator `X` of the complex cobordism ring `Omega^{U}_{2n}`
-which has all Chern numbers vanishing except for the Euler characteristic, presented as a linear
-combination of products of projective spaces, together with `chi(X)`.
-```
->>> mpci.get_euler_only(2)
-({(1, 1): -9, (2,): 8}, -12)
-```
-This means that for `n=2`, `X = -9[P^1 * P^1] + 8[P^3]` and that `chi(X)=-12`.
-```
->>> mpci.get_euler_only(3)
-({(1, 2): -8, (3,): 3, (1, 1, 1): 5}, 4)
-```
-This means that for `n=3`, `X = -8[P^1 * P^2] + 3[P^3] + 5[P^1 * P^1 * P^1]` and that `chi(X)=4`.
-
 # Installation
 
 The project only requires `sympy`. To install it in a virtual environment...
