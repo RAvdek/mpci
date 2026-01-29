@@ -1,5 +1,5 @@
 import math
-from itertools import combinations
+import itertools
 import numpy as np
 import sympy
 
@@ -45,7 +45,7 @@ class WPS(object):
         self.coefs = [self.lbk[1] * self.lbk[k] // self.lbk[k+1] for k in range(1,self.dim)]
 
     def _get_lbk(self, k):
-        subweights = list(combinations(self.weights, k+1))
+        subweights = list(itertools.combinations(self.weights, k+1))
         numbers = [math.prod(sw)//math.gcd(*sw) for sw in subweights]
         return math.lcm(*numbers)
 
@@ -126,21 +126,45 @@ class CompIntersection(object):
 
     def __init__(self, mp, degs):
         """To view a multiprojective space as a complete intersection, set degs = []
-        In general, degs will be list of list, each having len=(# factors of the multiprojective space)"""
+        In general, degs will be list of list, each having len=(# factors of the multiprojective space)
+        """
         self.mp = mp
         self.degs = degs
         self.total_dim = mp.total_dim - len(degs)
-        self.chern = mp.chern
+        self._set_chern()
+
+    def __str__(self):
+        return f"CompIntersection in P^({self.mp.dims}) of deg={self.degs}"
+
+    def _set_chern(self):
+        # initially set chern class as that of ambient projective space
+        self.chern = self.mp.chern
         self.chern_normal = 1
-        for deg in degs:
+        # update by diving self.chern by chern classes of lines cutting out the variety if interest
+        for deg in self.degs:
             self.chern *= self.mp.get_line_inv(deg)
             self.chern_normal *= self.mp.get_line(deg)
         self.chern = self.mp.truncate(self.chern)
+        self.chern_normal = self.mp.truncate(self.chern_normal)
         self.chern_numbers = dict()
 
     def get_sub_intersection(self, deg):
         """Get another complete intersection determined by intersection with a hypersurface"""
         return CompIntersection(mp=self.mp, degs=self.degs + [deg])
+
+    def get_c1_intersection(self):
+        """Get the intersection giving by cutting by a line whose c_1 is the first chern class of self
+        The result will necessarily have vanishing c1
+        """
+        deg = self.get_mth_chern(1).coeffs()
+        return self.get_sub_intersection(deg)
+
+    def get_product(self, other_ci):
+        """Realize a product of complete intersection as a complete intersection"""
+        out_dims = list(self.mp.dims) + list(other_ci.mp.dims)
+        out_degs = [d + [0]*len(other_ci.mp.dims) for d in self.degs] + \
+                   [[0]*len(self.mp.dims) + d for d in other_ci.degs]
+        return CompIntersection(MultiProj(out_dims), out_degs)
 
     def get_mth_chern(self, m):
         """Get the mth Chern class, expressed as a class coming from the ambient projective space"""
@@ -224,66 +248,115 @@ class CompIntersection(object):
             output[part] = c_part
         return output
 
-
-def get_euler_only(n):
-    """WARNING: This function is broken...
-    The following code says that there is a linear combination of  CY 3-folds with chi=2
-    %>>> mpci.CompIntersection(mpci.MultiProj([4]), [[5]]).get_all_chern_numbers()
-    [5]
-    {(1, 2): 0, (3,): -200, (1, 1, 1): 0}
-    %>>> mpci.CompIntersection(mpci.MultiProj([1,3]), [[2,4]]).get_all_chern_numbers()
-    [2, 4]
-    {(1, 2): 0, (3,): -168, (1, 1, 1): 0}
-    %>>> mpci.CompIntersection(mpci.MultiProj([1,1,2]), [[2,2,3]]).get_all_chern_numbers()
-    [2, 2, 3]
-    {(1, 2): 0, (3,): -144, (1, 1, 1): 0}
-    %>>> mpci.CompIntersection(mpci.MultiProj([2,2]), [[3,3]]).get_all_chern_numbers()
-    [3, 3]
-    {(1, 2): 0, (3,): -162, (1, 1, 1): 0}
-    %>>> mpci.CompIntersection(mpci.MultiProj([1,1,1,1]), [[2,2,2,2]]).get_all_chern_numbers()
-    [2, 2, 2, 2]
-    {(1, 2): 0, (3,): -128, (1, 1, 1): 0}
-    %>>> import sympy
-    %>>> sympy.gcd([200,168,144,162,128])
-    2
-    However, my linear algebra approach computed that the manifold of interest has chi=4...
-
-    Find the generator of Omega^{U}_{2n} such that all Chern numbers are zero except for c_{n}
-
-    The output is a pair (int_generator, euler) where...
-    - int_generator a dict {partition: coeff} describing a linear combination of products of projective space
-    - euler is the euler characteristic of the generator
+def get_z_kernel(m, transpose = False):
+    """For an integer matrix m provided as a list of lists, compute the kernel, returned as a list of lists
+    We need this extra function because sympy computes kernels over the rationals
 
     The linear algebra here is borrowed from...
     https://stackoverflow.com/questions/53921654/fast-computation-of-integer-basis-for-kernel-of-a-matrix-using-gpu
     """
-    _EULER_INDEX = (n,)
+    mat = sympy.Matrix(m)
+    if transpose:
+        mat = mat.T
+    rational_nullspace = mat.nullspace()
+    output = []
+    for v in rational_nullspace:
+        lcm_denom = sympy.lcm([x.denominator for x in v])
+        v_int = [int(lcm_denom * x) for x in v]
+        assert sympy.gcd([x for x in v_int]) == 1
+        output.append(v_int)
+    return output
+
+
+def get_additive_cob_gens(n):
+    """Get a set of complete intersections which additively spans Omega^{U}_{2n}.
+    This will contain lots of redundancies!
+    We take all products of projective spaces and milnor hypersurfaces of dim > 2
+    Recall the milnor hypersurface of dim = i + j - 1 is the deg=[1,1] hypersurface in (P^i)x(P^j)
+    """
+    output = [CompIntersection(MultiProj(p), []) for p in all_partitions(n)]
+    if n <= 2:
+        return output
+    # get all of the milnor hypersurfaces of dim<=n
+    # indexed by (i,j) with i<= j so that dim=i+j-1
+    milnor_indices = dict()
+    for milnor_dim in range(3,n+1):
+        milnor_indices[milnor_dim] = set()
+        i = 1
+        while i <= milnor_dim:
+            j = milnor_dim-i+1
+            if i <= j:
+                milnor_indices[milnor_dim].add((i,j))
+            i += 1
+    for total_milnor_dim in range(3,n+1):
+        milnor_dim_parts = [p for p in all_partitions(total_milnor_dim) if all([x > 2 for x in p])]
+        milnor_multi_dims = list()
+        for p in milnor_dim_parts:
+             milnor_multi_dims += itertools.product(*[milnor_indices[x] for x in p])
+        milnor_multi_dims = list(set(milnor_multi_dims))
+        proj_dims = all_partitions(n - total_milnor_dim)
+        for md in milnor_multi_dims:
+            for pd in proj_dims:
+                mfld = CompIntersection(MultiProj([md[0][0],md[0][1]]), [[1,1]])
+                for i in range(1, len(md)):
+                    mfld = mfld.get_product(
+                        CompIntersection(MultiProj([md[i][0],md[i][1]]), [[1,1]])
+                    )
+                if not total_milnor_dim == n:
+                    projective_part = CompIntersection(MultiProj(pd),[])
+                    mfld = mfld.get_product(projective_part)
+                output.append(mfld)
+    return output
+
+
+def get_euler_only(n, su=False):
+    """Find the generator of Omega^{U}_{2n} such that all Chern numbers are zero except for c_{n}
+    If su==True, restrict to image of Omega^{SU}_{2n} in Omega^{U}_{2n} instead.
+    In the latter case, we apply Theorem 5.11 of https://arxiv.org/pdf/1903.07178
+
+    The output is a pair (int_generator, euler) where...
+    - int_generator a dict {partition: coeff} describing a linear combination of products of projective space
+    - euler is the euler characteristic of the generator
+    """
     assert n > 1
-    parts = [p for p in all_partitions(n)]
-    # compute all of the chern numbers of all products of projective spaces having total
-    # dimension n. These give the generators of the complex bordism group Omega^{U}_{n}.
-    chern_numbers = {p: CompIntersection(MultiProj(list(p)), []).get_all_chern_numbers() for p in parts}
-    print(chern_numbers)
-    # put these into a matrix with each row corresponding to a chern number other than c_n
-    # each column corresponds to a product of projective spaces
-    m = [[chern_numbers[var][ind] for ind in parts if not ind==_EULER_INDEX] for var in parts]
-    print(sympy.Matrix(m).T)
-    # the kernel will have rank 1
-    nullspace = sympy.Matrix(m).T.nullspace()
-    assert len(nullspace) == 1
-    # get the generator as a list of sympy fractions
-    rational_generator = list(nullspace[0].T)
-    # get the lcm of the denomenators
-    lcm_denom = sympy.lcm([x.denominator for x in rational_generator])
-    int_generator = [int(lcm_denom * x) for x in rational_generator]
-    # ensure that the gcd is 1
-    assert sympy.gcd(int_generator) == 1
-    # convert to a dictionary mapping partitions (indexing products of projective spaces) to coefficients
-    int_generator = {parts[i]: int_generator[i] for i in range(len(parts))}
-    # compute chern number of the generator
-    special_cherns = {ind: sum([int_generator[p] * chern_numbers[p][ind] for p in parts]) for ind in parts}
-    for p in parts:
-        if not p == _EULER_INDEX:
-            assert special_cherns[p] == 0
-    euler = special_cherns[_EULER_INDEX]
-    return int_generator, euler
+    parts = all_partitions(n)
+    if not su:
+        _EULER_INDEX = (n,)
+        gens = get_additive_cob_gens(n)
+        chern_numbers = {str(g): g.get_all_chern_numbers() for g in gens}
+        # put these into a matrix with each row corresponding to a chern number other than c_n
+        # each column corresponds to a product of projective spaces
+        m = [[chern_numbers[str(g)][ind] for ind in parts if not ind==_EULER_INDEX] for g in gens]
+        nullspace = get_z_kernel(m, transpose=True)
+        eulers = [sum(n[i] * chern_numbers[str(gens[i])][_EULER_INDEX] for i in range(len(gens))) for n in nullspace]
+    else:
+        if 2*n % 8 != 4:
+            # In this case, we look at W_n, the set of all cobordism classes in Omega^{U}_{2n}
+            # all of whose chern numbers of the form c1*c1*... equal to zero
+            # then Im(Omega^{SU}_{2n} in Omega^{U}_{2n}) is the subspace of W_n such that all classes of the form
+            # c1*... are zero. So in this dim, Im(Omega^{SU}_{2n} in Omega^{U}_{2n}) is already contained in
+            # the subspace of Omega^{U}_{2n} such that every chern number of the form c1*... is zero.
+            return get_euler_only(n, su=False)
+        if 2*n % 8 == 4:
+            # In this case Im(Omega^{SU}_{2n} in Omega^{U}_{2n}) is the image of W_{n+1} under the image of the map
+            # which sends a manifold X to Y the Poincare dual of its c1.
+            # Since cI(Y) = (c1*cI)(X) we want to find all of the Y such that all classes vanish except possibly
+            # c1*cn and c_{n+1}. Then the c1*cn(Y) will give us the desired Euler number
+            # find the generators of Omega^{U}_{2n+2}
+            _EULER_INDEX_Y = (n+1,)
+            _EULER_INDEX_X = (1,n)
+            upper_gens = get_additive_cob_gens(n+1)
+            chern_numbers = {str(g): g.get_all_chern_numbers() for g in upper_gens}
+            upper_parts = chern_numbers[str(upper_gens[0])].keys()
+            # find which linear combos of them have all chern numbers of the form c1*c1*... equal to zero
+            m = [
+                [chern_numbers[str(g)][ind] for ind in upper_parts if ind not in [_EULER_INDEX_X, _EULER_INDEX_Y]]
+                for g in upper_gens
+            ]
+            # the kernel will consist of those Y we are interested in
+            nullspace = get_z_kernel(m, transpose=True)
+            eulers = [
+                sum(n[i] * chern_numbers[str(upper_gens[i])][_EULER_INDEX_X] for i in range(len(upper_gens)))
+                for n in nullspace
+            ]
+    return sympy.gcd(eulers)
