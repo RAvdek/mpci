@@ -310,13 +310,9 @@ def get_additive_cob_gens(n):
 
 
 def get_euler_only(n, su=False):
-    """Find the generator of Omega^{U}_{2n} such that all Chern numbers are zero except for c_{n}
+    """Find the GCD of c_n(X) over all X in Omega^{U}_{2n} such that all other Chern numbers are zero.
     If su==True, restrict to image of Omega^{SU}_{2n} in Omega^{U}_{2n} instead.
     In the latter case, we apply Theorem 5.11 of https://arxiv.org/pdf/1903.07178
-
-    The output is a pair (int_generator, euler) where...
-    - int_generator a dict {partition: coeff} describing a linear combination of products of projective space
-    - euler is the euler characteristic of the generator
     """
     assert n > 1
     parts = all_partitions(n)
@@ -340,23 +336,23 @@ def get_euler_only(n, su=False):
         if 2*n % 8 == 4:
             # In this case Im(Omega^{SU}_{2n} in Omega^{U}_{2n}) is the image of W_{n+1} under the image of the map
             # which sends a manifold X to Y the Poincare dual of its c1.
-            # Since cI(Y) = (c1*cI)(X) we want to find all of the Y such that all classes vanish except possibly
-            # c1*cn and c_{n+1}. Then the c1*cn(Y) will give us the desired Euler number
+            # Since cI(Y) = (c1*cI)(X) we want to find all of the Y whose chern classes of the form
+            # c1*cI = 0, except possibly c1*cn. Then the c1*cn(Y) will give us the desired Euler number
             # find the generators of Omega^{U}_{2n+2}
-            _EULER_INDEX_Y = (n+1,)
-            _EULER_INDEX_X = (1,n)
+            _EULER_INDEX = (1,n)
             upper_gens = get_additive_cob_gens(n+1)
             chern_numbers = {str(g): g.get_all_chern_numbers() for g in upper_gens}
             upper_parts = chern_numbers[str(upper_gens[0])].keys()
+            vanishing_parts = [c for c in upper_parts if c[0]==1 and not c == _EULER_INDEX]
             # find which linear combos of them have all chern numbers of the form c1*c1*... equal to zero
             m = [
-                [chern_numbers[str(g)][ind] for ind in upper_parts if ind not in [_EULER_INDEX_X, _EULER_INDEX_Y]]
+                [chern_numbers[str(g)][ind] for ind in vanishing_parts]
                 for g in upper_gens
             ]
             # the kernel will consist of those Y we are interested in
             nullspace = get_z_kernel(m, transpose=True)
             eulers = [
-                sum(n[i] * chern_numbers[str(upper_gens[i])][_EULER_INDEX_X] for i in range(len(upper_gens)))
-                for n in nullspace
+                sum(v[i] * chern_numbers[str(upper_gens[i])][_EULER_INDEX] for i in range(len(upper_gens)))
+                for v in nullspace
             ]
     return sympy.gcd(eulers)

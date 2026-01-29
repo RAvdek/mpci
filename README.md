@@ -70,6 +70,60 @@ Poly(3*x_0**2 + 3*x_0 + 1, x_0, domain='ZZ')
 {(1, 1): 18, (2,): 90}
 ```
 
+## Cobordism rings
+
+Recall that multiprojective spaces and milnor hypersurfaces generate the complex cobordism ring `Omega^{U}_{*}`.
+This is not a minimal set of generators however. The function `mpci.get_additive_cob_gens(n)` provides a list
+of additive generators of `Omega^{U}_{2n}`, which in general contain redundancies.
+```
+>>> for g in mpci.get_additive_cob_gens(4):
+...     print(g)
+...     
+CompIntersection in P^((4,)) of deg=[]
+CompIntersection in P^((1, 1, 2)) of deg=[]
+CompIntersection in P^((2, 2)) of deg=[]
+CompIntersection in P^((1, 3)) of deg=[]
+CompIntersection in P^((1, 1, 1, 1)) of deg=[]
+CompIntersection in P^([1, 3, 1]) of deg=[[1, 1, 0]]
+CompIntersection in P^([2, 2, 1]) of deg=[[1, 1, 0]]
+CompIntersection in P^([2, 3]) of deg=[[1, 1]]
+CompIntersection in P^([1, 4]) of deg=[[1, 1]]
+```
+In the case n=4, we have `P^4`, the product `P^1 x P^1 x P2`, the product `P^2 x P^2`, the product `P^1 x P^3`, 
+the product `(P^1)^4`, the product of a (1,3) milnor hypersurface with `P^1`, the product of a (2,2) milnor 
+hypersurface with `P^1`, a (2,3) milnor hypersurface (which is a blowup of `P^3` along a point), and a (1,4) milnor 
+hypersurface (which is a blowup of `P^4` along a 2-plane).
+
+The function `get_euler_only(n, su=False)` returns the GCD of c_n(X) over all X in Omega^{U}_{2n} such 
+that all other Chern numbers are zero. If su==True, restrict to image of Omega^{SU}_{2n} in Omega^{U}_{2n} instead.
+In the latter case, we apply Theorem 5.11 of https://arxiv.org/pdf/1903.07178 to aid in the computation.
+The output is independent of `su` output, unless `2n = 4 mod 8`. See the cases `n=2,6` below...
+```
+>>> mpci.get_euler_only(2)
+-12
+>>> mpci.get_euler_only(2, su=True) # Euler char of K3 surface
+24
+>>> mpci.get_euler_only(3, su=True) # Euler char of S6
+2
+>>> mpci.get_euler_only(4, su=True)
+720
+>>> mpci.get_euler_only(5, su=True)
+24
+>>> mpci.get_euler_only(6)
+30240
+>>> mpci.get_euler_only(6, su=True)
+1391040
+>>> mpci.get_euler_only(7, su=True)
+1440
+>>> mpci.get_euler_only(8, su=True)
+1209600
+>>> mpci.get_euler_only(9, su=True)
+80640
+```
+This code is not very well optimized :)
+
+## Weighted projective spaces
+
 Additional functionality computes the ring structure of weighted projective spaces 
 following Kawasaki "Cohomology of twisted projective lens spaces". 
 According to that paper, the additive cohomology has one generator `g_k` 
