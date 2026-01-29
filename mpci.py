@@ -1,8 +1,12 @@
 import math
 import itertools
+import logging
 import numpy as np
 import sympy
 
+LOG_FORMAT = '%(asctime)s %(message)s'
+logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+LOGGER = logging.getLogger(__name__)
 
 def all_partitions(n):
     """Returns all partitions of a positive integer n"""
@@ -340,8 +344,16 @@ def get_euler_only(n, su=False):
             # c1*cI = 0, except possibly c1*cn. Then the c1*cn(Y) will give us the desired Euler number
             # find the generators of Omega^{U}_{2n+2}
             _EULER_INDEX = (1,n)
+            LOGGER.info("Starting enumeration of cobordism generators")
             upper_gens = get_additive_cob_gens(n+1)
-            chern_numbers = {str(g): g.get_all_chern_numbers() for g in upper_gens}
+            LOGGER.info(f"Found {len(upper_gens)} generators. Starting chern number computation")
+            chern_numbers = dict()
+            counter = 0
+            for g in upper_gens:
+                chern_numbers[str(g)] = g.get_all_chern_numbers()
+                LOGGER.info(f"Found {counter}th set of chern numbers")
+                counter += 1
+            LOGGER.info("Finish computing chern numbers. Starting matrix initialization")
             upper_parts = chern_numbers[str(upper_gens[0])].keys()
             vanishing_parts = [c for c in upper_parts if c[0]==1 and not c == _EULER_INDEX]
             # find which linear combos of them have all chern numbers of the form c1*c1*... equal to zero
@@ -350,7 +362,9 @@ def get_euler_only(n, su=False):
                 for g in upper_gens
             ]
             # the kernel will consist of those Y we are interested in
+            LOGGER.info("Starting nullspace computation")
             nullspace = get_z_kernel(m, transpose=True)
+            LOGGER.info(f"Found nullspace with {len(nullspace)} elements")
             eulers = [
                 sum(v[i] * chern_numbers[str(upper_gens[i])][_EULER_INDEX] for i in range(len(upper_gens)))
                 for v in nullspace
