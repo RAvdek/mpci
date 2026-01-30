@@ -77,8 +77,13 @@ that multiprojective spaces and milnor hypersurfaces generate the complex cobord
 The latter is not a minimal set of generators however.
 
 The function `mpci.cob_to_multiproj(mfld)` takes a list of complete intersections and expresses
-each as a rational linear combination of multiprojectives.
-Here we use it to study Milnor hypersurfaces of complex dimension 3: 
+each as a rational linear combination of multiprojectives. This computation...
+```
+>>> mpci.cob_to_multiproj([mpci.CompIntersection(mpci.MultiProj([1,2]),[[1,1]])])
+[{(1, 1): 1, (2,): 0}]
+```
+shows that the index `[1,2]` milnor hypersurface (which is a blowup of `P2` at a point) is cobordant to `P1 x P1`. 
+Next, we use the function to study Milnor hypersurfaces of complex dimension 3: 
 ```
 >>> x = mpci.CompIntersection(mpci.MultiProj([1,3]),[[1,1]])
 >>> y = mpci.CompIntersection(mpci.MultiProj([2,2]),[[1,1]])
@@ -96,7 +101,7 @@ as integer linear combinations of projective spaces
 [{(4,): 0, (1, 1, 2): 0, (2, 2): 0, (1, 3): 1, (1, 1, 1, 1): 0},
  {(4,): -2, (1, 1, 2): -6, (2, 2): 3, (1, 3): 4, (1, 1, 1, 1): 2}]
 ```
-The first line of the above output says that the `[1,4]` Milnor hypersurface is cobordant to `P^1 x P^3`.
+In particular, first line of the above output says that the `[1,4]` Milnor hypersurface is cobordant to `P^1 x P^3`.
 Now let's look at the complex dimension 5 case:
 ```
 >>> x = mpci.CompIntersection(mpci.MultiProj([1,5]),[[1,1]])
@@ -109,6 +114,20 @@ Now let's look at the complex dimension 5 case:
 ```
 We see that the `[1,5]` milnor hypersurface is bordant to `P^1 x P^4` but that the `[2,4]` and `[3,3]`
 milnor hypersufaces cannot be expressed as integer linear combinations of multiprojective spaces.
+
+The function `milnors_cobordant_to_multiproj` enumerates the indices of Milnor hypersurfaces which are integrally 
+cobordant to products of projective spaces:
+```
+>>> mpci.milnors_cobordant_to_multiproj(2)
+[[1, 2]]
+>>> mpci.milnors_cobordant_to_multiproj(3)
+[[1, 3]]
+>>> mpci.milnors_cobordant_to_multiproj(4)
+[[1, 4], [2, 3]]
+>>> mpci.milnors_cobordant_to_multiproj(5)
+[[1, 5]]
+```
+The results are validated by the preceding computations with `cob_to_multiproj`.
 
 The function `mpci.get_additive_cob_gens(n)` provides a list
 of additive generators of `Omega^{U}_{2n}`, which in general contain redundancies.
@@ -130,6 +149,7 @@ In the case n=4, we have `P^4`, the product `P^1 x P^1 x P2`, the product `P^2 x
 the product `(P^1)^4`, the product of a (1,3) milnor hypersurface with `P^1`, the product of a (2,2) milnor 
 hypersurface with `P^1`, a (2,3) milnor hypersurface (which is a blowup of `P^3` along a point), and a (1,4) milnor 
 hypersurface (which is a blowup of `P^4` along a 2-plane).
+
 
 The function `get_euler_only(n, su=False)` returns the GCD of c_n(X) over all X in Omega^{U}_{2n} such 
 that all other Chern numbers are zero. If su==True, restrict to image of Omega^{SU}_{2n} in Omega^{U}_{2n} instead.

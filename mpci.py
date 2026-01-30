@@ -303,6 +303,25 @@ def cob_to_multiproj(mflds):
     return output
 
 
+def milnors_cobordant_to_multiproj(dim):
+    """Generate a list of indices of milnor hypersurfaces of a given complex dim which are cobordant
+    to products of projective spaces
+    """
+    milnors = list()
+    i = 1
+    while 2*i <= dim:
+        milnors.append(CompIntersection(MultiProj([i, dim + 1 - i]), [[1,1]]))
+        i += 1
+    if len(milnors) == 0:
+        return list()
+    coeffs = cob_to_multiproj(milnors)
+    output = list()
+    for i in range(len(milnors)):
+        if all([v.denominator == 1 for v in coeffs[i].values()]):
+            output.append(milnors[i].mp.dims)
+    return output
+
+
 def get_additive_cob_gens(n):
     """Get a set of complete intersections which additively spans Omega^{U}_{2n}.
     This will contain lots of redundancies!
