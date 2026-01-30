@@ -179,6 +179,7 @@ class CompIntersection(object):
         total_degree = sum(partition)
         if total_degree != self.total_dim:
             raise ValueError(f"Variety of total_dim={self.total_dim} does not have {partition}th Chern number")
+        # do not compute if we've already done so!
         if partition in self.chern_numbers:
             return self.chern_numbers[partition]
         chern_part = 1
@@ -272,11 +273,45 @@ def get_z_kernel(m, transpose = False):
     return output
 
 
+def cob_to_multiproj(mflds):
+    """For a list of multiprojective spaces of the same dimension, express their rational bordism class
+    as a collection of multiprojective spaces. Output is a list of dictionaries of the form
+        { partition: coeff }
+    """
+    # ensure that we have a list of multiprojs all having the same dimensions
+    assert isinstance(mflds, list)
+    assert len(mflds) > 0
+    assert all([isinstance(x,CompIntersection) for x in mflds])
+    assert len(set([x.total_dim for x in mflds])) == 1
+    mfld_cherns = [x.get_all_chern_numbers() for x in mflds]
+    # this orders partitions, so that they can be used as an index
+    parts = list(mfld_cherns[0].keys())
+    mps = [CompIntersection(MultiProj(p), []) for p in parts]
+    mp_cherns = [x.get_all_chern_numbers() for x in mps]
+    # Put these into a matrix with...
+    # the jth row corresponding to chern numbers indexed by jth partitions
+    # the ith column corresponds to a product of projective spaces indexed by ith partition
+    # We know that this matrix will be invertible over the rationals since Omega^{U}
+    # tensor Q is a polynomial algebra on the P^i
+    output = list()
+    m = sympy.Matrix([[mpc[ind] for ind in parts] for mpc in mp_cherns]).T
+    for mc in mfld_cherns:
+        v = sympy.Matrix([mc[p] for p in parts])
+        solution = list(m.LUsolve(v).T)
+        solution_dict = {parts[i]: solution[i] for i in range(len(parts))}
+        output.append(solution_dict)
+    return output
+
+
 def get_additive_cob_gens(n):
     """Get a set of complete intersections which additively spans Omega^{U}_{2n}.
     This will contain lots of redundancies!
     We take all products of projective spaces and milnor hypersurfaces of dim > 2
     Recall the milnor hypersurface of dim = i + j - 1 is the deg=[1,1] hypersurface in (P^i)x(P^j)
+
+    TODO: We really need to cut down on redundancies.
+    The most expensive computations come from computing chern numbers of the big products involving
+    milnor hypersurfaces. We can try to figure out which are already covered by multi-projective spaces
     """
     output = [CompIntersection(MultiProj(p), []) for p in all_partitions(n)]
     if n <= 2:

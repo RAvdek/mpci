@@ -72,8 +72,45 @@ Poly(3*x_0**2 + 3*x_0 + 1, x_0, domain='ZZ')
 
 ## Cobordism rings
 
-Recall that multiprojective spaces and milnor hypersurfaces generate the complex cobordism ring `Omega^{U}_{*}`.
-This is not a minimal set of generators however. The function `mpci.get_additive_cob_gens(n)` provides a list
+Recall that multiprojective spaces generate `Omega^{U}_{*}` tensor Q and
+that multiprojective spaces and milnor hypersurfaces generate the complex cobordism ring `Omega^{U}_{*}`
+The latter is not a minimal set of generators however.
+
+The function `mpci.cob_to_multiproj(mfld)` takes a list of complete intersections and expresses
+each as a rational linear combination of multiprojectives.
+Here we use it to study Milnor hypersurfaces of complex dimension 3: 
+```
+>>> x = mpci.CompIntersection(mpci.MultiProj([1,3]),[[1,1]])
+>>> y = mpci.CompIntersection(mpci.MultiProj([2,2]),[[1,1]])
+>>> mpci.cob_to_multiproj([x,y])
+[{(1, 2): 1, (3,): 0, (1, 1, 1): 0}, {(1, 2): 4, (3,): -3/2, (1, 1, 1): -3/2}]
+```
+The first line of the above output says that the `[1,3]` Milnor hypersurface is cobordant to `P^1 x P^2`
+but that the `[2,2]` hypersurface cannot be expressed as an integral linear combination of multiprojectives. 
+Next, we see that all of the milnor hypersurfaces of complex dimension 4 can be expresses
+as integer linear combinations of projective spaces
+```
+>>> x = mpci.CompIntersection(mpci.MultiProj([1,4]),[[1,1]])
+>>> y = mpci.CompIntersection(mpci.MultiProj([2,3]),[[1,1]])
+>>> mpci.cob_to_multiproj([x,y])
+[{(4,): 0, (1, 1, 2): 0, (2, 2): 0, (1, 3): 1, (1, 1, 1, 1): 0},
+ {(4,): -2, (1, 1, 2): -6, (2, 2): 3, (1, 3): 4, (1, 1, 1, 1): 2}]
+```
+The first line of the above output says that the `[1,4]` Milnor hypersurface is cobordant to `P^1 x P^3`.
+Now let's look at the complex dimension 5 case:
+```
+>>> x = mpci.CompIntersection(mpci.MultiProj([1,5]),[[1,1]])
+>>> y = mpci.CompIntersection(mpci.MultiProj([2,4]),[[1,1]])
+>>> z = mpci.CompIntersection(mpci.MultiProj([3,3]),[[1,1]])
+>>> mpci.cob_to_multiproj([x,y,z])
+[{(5,): 0, (1, 1, 3): 0, (1, 4): 1, (2, 3): 0, (1, 2, 2): 0, (1, 1, 1, 2): 0, (1, 1, 1, 1, 1): 0},
+ {(5,): -5/2, (1, 1, 3): -15/2, (1, 4): 5, (2, 3): 6, (1, 2, 2): -15/2, (1, 1, 1, 2): 10, (1, 1, 1, 1, 1): -5/2},
+ {(5,): -10/3, (1, 1, 3): -12, (1, 4): 6, (2, 3): 11, (1, 2, 2): -16, (1, 1, 1, 2): 64/3, (1, 1, 1, 1, 1): -6}]
+```
+We see that the `[1,5]` milnor hypersurface is bordant to `P^1 x P^4` but that the `[2,4]` and `[3,3]`
+milnor hypersufaces cannot be expressed as integer linear combinations of multiprojective spaces.
+
+The function `mpci.get_additive_cob_gens(n)` provides a list
 of additive generators of `Omega^{U}_{2n}`, which in general contain redundancies.
 ```
 >>> for g in mpci.get_additive_cob_gens(4):
