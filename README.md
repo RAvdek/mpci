@@ -72,9 +72,9 @@ Poly(3*x_0**2 + 3*x_0 + 1, x_0, domain='ZZ')
 
 ## Cobordism rings
 
-Recall that multiprojective spaces generate `Omega^{U}_{*}` tensor Q and
-that multiprojective spaces and milnor hypersurfaces generate the complex cobordism ring `Omega^{U}_{*}`
-The latter is not a minimal set of generators however.
+Recall that multiprojective spaces generate `Omega^{U}_{*}` tensor Q and that milnor hypersurfaces
+generate the complex cobordism ring `Omega^{U}_{*}`. Cf. this page on
+[the manifold atlas][http://www.map.mpim-bonn.mpg.de/Complex_bordism#Milnor_hypersurfaces].
 
 The function `mpci.cob_to_multiproj(mfld)` takes a list of complete intersections and expresses
 each as a rational linear combination of multiprojectives. This computation...
@@ -130,31 +130,69 @@ cobordant to products of projective spaces:
 The results are validated by the preceding computations with `cob_to_multiproj`.
 
 The function `mpci.get_additive_cob_gens(n)` provides a list
-of additive generators of `Omega^{U}_{2n}`, which in general contain redundancies.
+of complete intersection varieties spanning `Omega^{U}_{2n}`, which in general will contain redundancies.
+In practice, we have found that it is computationally expensive to compute chern numbers of products of milnor
+hypersurfaces whose total dimension is large. This is probably due to sympy's polynomial methods not being 
+computationally optimized. Algorithmically, it's also a bit tricky to list a minimal set of generators.
+So we opt to have lists of generators with redundancies.
+Below we see that `P1 x P1` and `P2` additively generate `Omega^{U}_{4}`:
+```
+>>> for g in mpci.get_additive_cob_gens(2):
+...     print(g)
+... 
+CompIntersection in P^((1, 1)) of deg=[]
+CompIntersection in P^((2,)) of deg=[]
+```
+Next we see that `P1 x P1`, `P3`, `P1 x P1 x P1`, and the `[2,2]` milnor hypersurface span `Omega^{U}_{6}`.
+This is not a minimal set of generators!
+```
+>>> for g in mpci.get_additive_cob_gens(3):
+...     print(g)
+... 
+CompIntersection in P^((1, 2)) of deg=[]
+CompIntersection in P^((3,)) of deg=[]
+CompIntersection in P^((1, 1, 1)) of deg=[]
+CompIntersection in P^([2, 2]) of deg=[[1, 1]]
+```
+Here are the complex dim 4 and 5 cases:
 ```
 >>> for g in mpci.get_additive_cob_gens(4):
 ...     print(g)
-...     
+... 
 CompIntersection in P^((4,)) of deg=[]
 CompIntersection in P^((1, 1, 2)) of deg=[]
 CompIntersection in P^((2, 2)) of deg=[]
 CompIntersection in P^((1, 3)) of deg=[]
 CompIntersection in P^((1, 1, 1, 1)) of deg=[]
-CompIntersection in P^([1, 3, 1]) of deg=[[1, 1, 0]]
 CompIntersection in P^([2, 2, 1]) of deg=[[1, 1, 0]]
-CompIntersection in P^([2, 3]) of deg=[[1, 1]]
-CompIntersection in P^([1, 4]) of deg=[[1, 1]]
 ```
 In the case n=4, we have `P^4`, the product `P^1 x P^1 x P2`, the product `P^2 x P^2`, the product `P^1 x P^3`, 
-the product `(P^1)^4`, the product of a (1,3) milnor hypersurface with `P^1`, the product of a (2,2) milnor 
-hypersurface with `P^1`, a (2,3) milnor hypersurface (which is a blowup of `P^3` along a point), and a (1,4) milnor 
-hypersurface (which is a blowup of `P^4` along a 2-plane).
+the product `(P^1)^4`, and the product of a (2,2) milnor 
+hypersurface with `P^1`. Here is the complex dim 5 case:
+```
+>>> for g in mpci.get_additive_cob_gens(5):
+...     print(g)
+... 
+CompIntersection in P^((5,)) of deg=[]
+CompIntersection in P^((1, 1, 3)) of deg=[]
+CompIntersection in P^((1, 4)) of deg=[]
+CompIntersection in P^((2, 3)) of deg=[]
+CompIntersection in P^((1, 2, 2)) of deg=[]
+CompIntersection in P^((1, 1, 1, 2)) of deg=[]
+CompIntersection in P^((1, 1, 1, 1, 1)) of deg=[]
+CompIntersection in P^([2, 2, 1, 1]) of deg=[[1, 1, 0, 0]]
+CompIntersection in P^([2, 2, 2]) of deg=[[1, 1, 0]]
+CompIntersection in P^([2, 4]) of deg=[[1, 1]]
+CompIntersection in P^([3, 3]) of deg=[[1, 1]]
+```
 
 
-The function `get_euler_only(n, su=False)` returns the GCD of c_n(X) over all X in Omega^{U}_{2n} such 
-that all other Chern numbers are zero. If su==True, restrict to image of Omega^{SU}_{2n} in Omega^{U}_{2n} instead.
-In the latter case, we apply Theorem 5.11 of https://arxiv.org/pdf/1903.07178 to aid in the computation.
-The output is independent of `su` output, unless `2n = 4 mod 8`. See the cases `n=2,6` below...
+The function `get_euler_only(n, su=False)` returns the GCD of the top chern number, `c_n(X)`, 
+over all X in `Omega^{U}_{2n}` such that all other Chern numbers are zero.
+If `su==True`, restrict to image of `Omega^{SU}_{2n}` in `Omega^{U}_{2n}` instead.
+In the latter case, we apply Theorem 5.11 of [this article][https://arxiv.org/pdf/1903.07178] to carry out 
+the computation. The output is independent of `su` output unless `2n = 4 mod 8`. See the cases `n=2,6` below. 
+This computation is very heavy for `n > 7`, so logging is included to track progress of the computation. 
 ```
 >>> mpci.get_euler_only(2)
 -12
@@ -174,7 +212,7 @@ The output is independent of `su` output, unless `2n = 4 mod 8`. See the cases `
 1440
 >>> mpci.get_euler_only(8, su=True)
 1209600
->>> mpci.get_euler_only(9, su=True)
+>>> mpci.get_euler_only(9, su=True) # this took 4 minutes on my laptop...
 80640
 ```
 This code is not very well optimized :)

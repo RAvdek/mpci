@@ -1,12 +1,25 @@
 import math
 import itertools
 import logging
-import numpy as np
 import sympy
 
 LOG_FORMAT = '%(asctime)s %(message)s'
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 LOGGER = logging.getLogger(__name__)
+_SESSION_CHERN_MEMORY = dict()
+
+# These internal functions store computations of chern numbers
+
+def _get_chern_from_db(dims, degs):
+    return _SESSION_CHERN_MEMORY.get((tuple(dims), tuple([tuple(d) for d in degs])))
+
+def _set_entry_in_db(dims, degs, chern_numbers=None):
+    assert isinstance(chern_numbers, dict)
+    if chern_numbers is not None:
+        _SESSION_CHERN_MEMORY[(tuple(dims), tuple([tuple(d) for d in degs]))] = chern_numbers
+    else:
+        # create an empty dictionary otherwise
+        _SESSION_CHERN_MEMORY[(tuple(dims), tuple([tuple(d) for d in degs]))] = dict()
 
 def all_partitions(n):
     """Returns all partitions of a positive integer n"""
@@ -141,7 +154,7 @@ class CompIntersection(object):
         return f"CompIntersection in P^({self.mp.dims}) of deg={self.degs}"
 
     def _set_chern(self):
-        # initially set chern class as that of ambient projective space
+        """set total chern class and associated vars as that of ambient projective space"""
         self.chern = self.mp.chern
         self.chern_normal = 1
         # update by diving self.chern by chern classes of lines cutting out the variety if interest
@@ -150,7 +163,22 @@ class CompIntersection(object):
             self.chern_normal *= self.mp.get_line(deg)
         self.chern = self.mp.truncate(self.chern)
         self.chern_normal = self.mp.truncate(self.chern_normal)
-        self.chern_numbers = dict()
+
+    def _has_key_in_memory(self, partition = None):
+        """check the database _SESSION_CHERN_MEMORY to see if data is available"""
+        db_data = _get_chern_from_db(self.mp.dims, self.degs)
+        if db_data is None:
+            # If there is no database entry, create it
+            _set_entry_in_db(self.mp.dims, self.degs, dict())
+            return False
+        else:
+            if partition is None:
+                # we have a database entry and are not caring about finding a partition
+                return True
+        # now we're assuming we've found a DB entry and are looking for a particular partition
+        if db_data.get(partition) is None:
+            return False
+        return True
 
     def get_sub_intersection(self, deg):
         """Get another complete intersection determined by intersection with a hypersurface"""
@@ -180,21 +208,28 @@ class CompIntersection(object):
         if total_degree != self.total_dim:
             raise ValueError(f"Variety of total_dim={self.total_dim} does not have {partition}th Chern number")
         # do not compute if we've already done so!
-        if partition in self.chern_numbers:
-            return self.chern_numbers[partition]
+        if self._has_key_in_memory(partition):
+            return _get_chern_from_db(self.mp.dims, self.degs)[partition]
         chern_part = 1
         for p in partition:
             chern_part *= self.get_mth_chern(p)
         output = self.integrate(chern_part)
-        self.chern_numbers[partition] = output
         return output
 
-    def get_all_chern_numbers(self):
+    def get_all_chern_numbers(self, log=False):
         """Get all Chern numbers"""
+        if log:
+            LOGGER.info(f"Get all Chern numbers for {self}")
+        if self._has_key_in_memory():
+            data = _get_chern_from_db(self.mp.dims, self.degs)
+            if data is not None:
+                return data
         all_parts = all_partitions(self.total_dim)
+        all_chern_numbers = dict()
         for part in all_parts:
-            self.get_chern_number(part)
-        return self.chern_numbers
+            all_chern_numbers[part] = self.get_chern_number(part)
+        _set_entry_in_db(self.mp.dims, self.degs, all_chern_numbers)
+        return all_chern_numbers
 
     def integrate(self, c):
         """Integrate a polynomial over the complete intersection"""
@@ -222,7 +257,7 @@ class CompIntersection(object):
         # chern_symbols[i] = "c_i"
         chern_symbols = [sympy.Symbol(f"c{i}") for i in range(0, self.total_dim + 1)]
         output = dict()
-        for part in self.chern_numbers.keys():
+        for part in self.get_all_chern_numbers().keys():
             # compute N_{i} indexed by c_{i}
             n = [0 for _ in range(self.total_dim+1)]
             for p in part:
@@ -273,7 +308,7 @@ def get_z_kernel(m, transpose = False):
     return output
 
 
-def cob_to_multiproj(mflds):
+def cob_to_multiproj(mflds, log=False):
     """For a list of multiprojective spaces of the same dimension, express their rational bordism class
     as a collection of multiprojective spaces. Output is a list of dictionaries of the form
         { partition: coeff }
@@ -287,7 +322,7 @@ def cob_to_multiproj(mflds):
     # this orders partitions, so that they can be used as an index
     parts = list(mfld_cherns[0].keys())
     mps = [CompIntersection(MultiProj(p), []) for p in parts]
-    mp_cherns = [x.get_all_chern_numbers() for x in mps]
+    mp_cherns = [x.get_all_chern_numbers(log=log) for x in mps]
     # Put these into a matrix with...
     # the jth row corresponding to chern numbers indexed by jth partitions
     # the ith column corresponds to a product of projective spaces indexed by ith partition
@@ -303,7 +338,7 @@ def cob_to_multiproj(mflds):
     return output
 
 
-def milnors_cobordant_to_multiproj(dim):
+def milnors_cobordant_to_multiproj(dim, log=False):
     """Generate a list of indices of milnor hypersurfaces of a given complex dim which are cobordant
     to products of projective spaces
     """
@@ -314,7 +349,7 @@ def milnors_cobordant_to_multiproj(dim):
         i += 1
     if len(milnors) == 0:
         return list()
-    coeffs = cob_to_multiproj(milnors)
+    coeffs = cob_to_multiproj(milnors, log=log)
     output = list()
     for i in range(len(milnors)):
         if all([v.denominator == 1 for v in coeffs[i].values()]):
@@ -322,7 +357,7 @@ def milnors_cobordant_to_multiproj(dim):
     return output
 
 
-def get_additive_cob_gens(n):
+def get_additive_cob_gens(n, log=False):
     """Get a set of complete intersections which additively spans Omega^{U}_{2n}.
     This will contain lots of redundancies!
     We take all products of projective spaces and milnor hypersurfaces of dim > 2
@@ -337,14 +372,18 @@ def get_additive_cob_gens(n):
         return output
     # get all of the milnor hypersurfaces of dim<=n
     # indexed by (i,j) with i<= j so that dim=i+j-1
+    # We represent as a dict {dim: set of indices}
+    # We exclude those hypersurfaces which are integrally bordant to products of projective spaces
     milnor_indices = dict()
     for milnor_dim in range(3,n+1):
+        excluded_indices = milnors_cobordant_to_multiproj(milnor_dim, log=log)
         milnor_indices[milnor_dim] = set()
         i = 1
         while i <= milnor_dim:
             j = milnor_dim-i+1
             if i <= j:
-                milnor_indices[milnor_dim].add((i,j))
+                if [i,j] not in excluded_indices:
+                    milnor_indices[milnor_dim].add((i,j))
             i += 1
     for total_milnor_dim in range(3,n+1):
         milnor_dim_parts = [p for p in all_partitions(total_milnor_dim) if all([x > 2 for x in p])]
@@ -376,11 +415,17 @@ def get_euler_only(n, su=False):
     parts = all_partitions(n)
     if not su:
         _EULER_INDEX = (n,)
-        gens = get_additive_cob_gens(n)
-        chern_numbers = {str(g): g.get_all_chern_numbers() for g in gens}
+        LOGGER.info("Starting enumeration of cobordism generators")
+        gens = get_additive_cob_gens(n, log=True)
+        LOGGER.info(f"Found {len(gens)} generators. Starting chern number computation")
+        chern_numbers = dict()
+        for g in gens:
+            chern_numbers[str(g)] = g.get_all_chern_numbers(log=True)
+        LOGGER.info("Finish computing chern numbers. Starting matrix initialization")
         # put these into a matrix with each row corresponding to a chern number other than c_n
         # each column corresponds to a product of projective spaces
         m = [[chern_numbers[str(g)][ind] for ind in parts if not ind==_EULER_INDEX] for g in gens]
+        LOGGER.info("Starting nullspace computation")
         nullspace = get_z_kernel(m, transpose=True)
         eulers = [sum(n[i] * chern_numbers[str(gens[i])][_EULER_INDEX] for i in range(len(gens))) for n in nullspace]
     else:
@@ -399,14 +444,11 @@ def get_euler_only(n, su=False):
             # find the generators of Omega^{U}_{2n+2}
             _EULER_INDEX = (1,n)
             LOGGER.info("Starting enumeration of cobordism generators")
-            upper_gens = get_additive_cob_gens(n+1)
+            upper_gens = get_additive_cob_gens(n+1, log=True)
             LOGGER.info(f"Found {len(upper_gens)} generators. Starting chern number computation")
             chern_numbers = dict()
-            counter = 0
             for g in upper_gens:
-                chern_numbers[str(g)] = g.get_all_chern_numbers()
-                LOGGER.info(f"Found {counter}th set of chern numbers")
-                counter += 1
+                chern_numbers[str(g)] = g.get_all_chern_numbers(log=True)
             LOGGER.info("Finish computing chern numbers. Starting matrix initialization")
             upper_parts = chern_numbers[str(upper_gens[0])].keys()
             vanishing_parts = [c for c in upper_parts if c[0]==1 and not c == _EULER_INDEX]
