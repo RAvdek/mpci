@@ -1,17 +1,14 @@
 # MPCI: Multi-projective Complete Intersections
 
-A python package for studying complete intersections in products of projective spaces.
+A python package for studying complete intersections in products of projective spaces and complex cobordism rings.
 The goal is to carry out some quick computations and search for interesting examples.
 There are many existing packages which deal with varieties in a single projective space,
 and looking at varieties in products yields more examples.
 
-Currently, the package can compute Chern numbers of these varieties.
-It can also compute Chern numbers of branched covers
-when the branch locus is another complete intersection.
-
-There is also some functionality for studying numerical properties
-of weighted projective spaces and the complex cobordism ring.
-See the examples below.
+The package can compute Chern numbers of these varieties and describe varieties spanning `Omega^{U}_{2n}`
+with redundancies. It can also compute Chern numbers of branched covers when the branch locus
+is another complete intersection. There is also some functionality for studying numerical properties
+of weighted projective spaces. See the examples below.
 
 Users are warned that the computational results have not been rigorously tested,
 only checked against examples which I've worked out by hand.
@@ -210,10 +207,14 @@ This computation is very heavy for `n > 7`, so logging is included to track prog
 1391040
 >>> mpci.get_euler_only(7, su=True)
 1440
->>> mpci.get_euler_only(8, su=True) # currently 22 secs
+>>> mpci.get_euler_only(8, su=True) # currently 3 secs (down from 22 secs)
 1209600
->>> mpci.get_euler_only(9, su=True) # this took 4 minutes on my laptop...
+>>> mpci.get_euler_only(9, su=True) # this took 18 secs (down from 2:34, down from 4 minutes) on my laptop...
 80640
+>>> mpci.get_euler_only(10, su=True) # this took 7 minutes
+95800320
+>>> mpci.get_euler_only(10) # without the SU condition, we get half :) Took about 1:10
+47900160
 ```
 This code is not very well optimized :)
 

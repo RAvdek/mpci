@@ -7,6 +7,7 @@ LOG_FORMAT = '%(asctime)s %(message)s'
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 LOGGER = logging.getLogger(__name__)
 _SESSION_CHERN_MEMORY = dict()
+_SESSION_PARTIIONS = dict()
 
 # These internal functions store computations of chern numbers
 
@@ -23,11 +24,14 @@ def _set_entry_in_db(dims, degs, chern_numbers=None):
 
 def all_partitions(n):
     """Returns all partitions of a positive integer n"""
+    if n in _SESSION_PARTIIONS.keys():
+        return _SESSION_PARTIIONS[n]
     answer = set()
     answer.add((n, ))
     for i in range(1, n):
         for j in all_partitions(n - i):
             answer.add(tuple(sorted((i, ) + j)))
+    _SESSION_PARTIIONS[n] = answer
     return answer
 
 
@@ -223,23 +227,34 @@ class CompIntersection(object):
         if self._has_key_in_memory():
             data = _get_chern_from_db(self.mp.dims, self.degs)
             if data is not None:
-                return data
+                # this is a bad pattern, but I need a quick fix
+                if len(data.keys()) > 0:
+                    return data
         all_parts = all_partitions(self.total_dim)
         all_chern_numbers = dict()
-        # If self is P1 x Z with Z = P^{n_1} x ... x P^{n_k}
-        # use Z.get_all_chern_numbers_times_P1()
+        # If self is P1 x Z with use Z.get_all_chern_numbers_times_P1()
         # This applies recursion and should make things much faster
-        if len(self.degs) == 0:
-            dims = self.mp.dims
-            if len(dims) > 1:
-                if dims[0] == 1:
-                    all_chern_numbers = CompIntersection(MultiProj(dims[1:]), []).get_all_chern_numbers_times_P1()
+        if len(self.mp.dims) > 1:
+            # try to find a P1 factor we can split off
+            p1_indices = [i for i in range(len(self.mp.dims)) if self.mp.dims[i]==1]
+            if len(p1_indices) > 0:
+                for i in p1_indices:
+                    if all([d[i] == 0 for d in self.degs]):
+                        new_dims = list(self.mp.dims[:])
+                        new_degs = list(self.degs)
+                        new_dims.pop(i)
+                        for d in new_degs:
+                            d.pop(i)
+                        all_chern_numbers = CompIntersection(
+                            MultiProj(new_dims), new_degs).get_all_chern_numbers_times_p1()
+                        _set_entry_in_db(self.mp.dims, self.degs, all_chern_numbers)
+                        return all_chern_numbers
         for part in all_parts:
             all_chern_numbers[part] = self.get_chern_number(part)
         _set_entry_in_db(self.mp.dims, self.degs, all_chern_numbers)
         return all_chern_numbers
 
-    def get_all_chern_numbers_times_P1(self):
+    def get_all_chern_numbers_times_p1(self):
         """Find all of the self times P1. This gives an easy way to speed up computations
         The explicit formula we're leveraging is that for I = (I_1,...,I_k)
 
@@ -253,8 +268,12 @@ class CompIntersection(object):
                 # copy the partition so it can be modified
                 modified_part = list(part[:])
                 modified_part[i] -= 1
-                if all([x > 0 for x in modified_part]):
+                modified_part = tuple(sorted([x for x in modified_part if x > 0]))
+                try:
                     output[part] += 2 * all_chern_numbers[tuple(sorted(modified_part))]
+                except  KeyError as e:
+                    LOGGER.info(f"Keyerror for get_all_chern_numbers_times_p1 of {self}")
+                    raise e
         return output
 
     def integrate(self, c):
@@ -301,7 +320,7 @@ class CompIntersection(object):
             p_alpha = [h.coeff(l, k) for k in range(self.total_dim)]
             delta_poly = sum([(1 - mu**(i+1)) * mu**(-i) *p_alpha[i] * (l**i) for i in range(len(p_alpha))])
             if verbose:
-                print("Izawa delta polynomial for partition", part, "\n", delta_poly)
+                LOGGER.info(f"Izawa delta polynomial for partition {part} \n {delta_poly}")
             # Substitutions to get a cohomology class in the ambient multiprojective space
             delta = delta_poly.subs({mu: branch_order})
             delta = delta.subs({l: branch_line_c1.as_expr()})
@@ -450,7 +469,13 @@ def get_euler_only(n, su=False):
         LOGGER.info("Finish computing chern numbers. Starting matrix initialization")
         # put these into a matrix with each row corresponding to a chern number other than c_n
         # each column corresponds to a product of projective spaces
-        m = [[chern_numbers[str(g)][ind] for ind in parts if not ind==_EULER_INDEX] for g in gens]
+        m = []
+        for g in gens:
+            try:
+                m.append([chern_numbers[str(g)][ind] for ind in parts if not ind==_EULER_INDEX])
+            except KeyError as e:
+                LOGGER.info(f"Keyerror for {g} with cher_numbers: \n {chern_numbers[str(g)]}")
+                raise e
         LOGGER.info("Starting nullspace computation")
         nullspace = get_z_kernel(m, transpose=True)
         eulers = [sum(n[i] * chern_numbers[str(gens[i])][_EULER_INDEX] for i in range(len(gens))) for n in nullspace]
