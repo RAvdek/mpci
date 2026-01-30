@@ -226,10 +226,36 @@ class CompIntersection(object):
                 return data
         all_parts = all_partitions(self.total_dim)
         all_chern_numbers = dict()
+        # If self is P1 x Z with Z = P^{n_1} x ... x P^{n_k}
+        # use Z.get_all_chern_numbers_times_P1()
+        # This applies recursion and should make things much faster
+        if len(self.degs) == 0:
+            dims = self.mp.dims
+            if len(dims) > 1:
+                if dims[0] == 1:
+                    all_chern_numbers = CompIntersection(MultiProj(dims[1:]), []).get_all_chern_numbers_times_P1()
         for part in all_parts:
             all_chern_numbers[part] = self.get_chern_number(part)
         _set_entry_in_db(self.mp.dims, self.degs, all_chern_numbers)
         return all_chern_numbers
+
+    def get_all_chern_numbers_times_P1(self):
+        """Find all of the self times P1. This gives an easy way to speed up computations
+        The explicit formula we're leveraging is that for I = (I_1,...,I_k)
+
+        c_I(P1 x M) = 2(c_{I_1 - 1,I2,..,I_K}(M) + ... + c_{I_1,I2,..,I_K-1}(M))
+        """
+        upper_parts = all_partitions(self.total_dim + 1)
+        all_chern_numbers = self.get_all_chern_numbers()
+        output = {p: 0 for p in upper_parts}
+        for part in upper_parts:
+            for i in range(len(part)):
+                # copy the partition so it can be modified
+                modified_part = list(part[:])
+                modified_part[i] -= 1
+                if all([x > 0 for x in modified_part]):
+                    output[part] += 2 * all_chern_numbers[tuple(sorted(modified_part))]
+        return output
 
     def integrate(self, c):
         """Integrate a polynomial over the complete intersection"""

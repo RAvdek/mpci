@@ -210,7 +210,7 @@ This computation is very heavy for `n > 7`, so logging is included to track prog
 1391040
 >>> mpci.get_euler_only(7, su=True)
 1440
->>> mpci.get_euler_only(8, su=True)
+>>> mpci.get_euler_only(8, su=True) # currently 22 secs
 1209600
 >>> mpci.get_euler_only(9, su=True) # this took 4 minutes on my laptop...
 80640
