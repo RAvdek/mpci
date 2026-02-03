@@ -67,6 +67,18 @@ Poly(3*x_0**2 + 3*x_0 + 1, x_0, domain='ZZ')
 {(1, 1): 18, (2,): 90}
 ```
 
+## Memory
+
+Computing Chern numbers and partitions over and over can be quite expensive. 
+The following functions will allow you to store your computations in a local database file and retrieve them in future
+sessions.
+```
+>>> mpci.save_memory() # saves some current computations in a local file
+>>> mpci.load_memory() # self-explanatory 
+```
+Note that these work with a single file! If you use `save_memory`, the information from your current session
+will overwrite any previous computations. Likewise, `load_memory` will overwrite your current computations.
+
 ## Cobordism rings
 
 Recall that multiprojective spaces generate `Omega^{U}_{*}` tensor Q and that milnor hypersurfaces

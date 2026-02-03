@@ -1,18 +1,21 @@
-import math
 import itertools
 import logging
+import math
+import pickle
 import sympy
 
 LOG_FORMAT = '%(asctime)s %(message)s'
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 LOGGER = logging.getLogger(__name__)
 _SESSION_CHERN_MEMORY = dict()
-_SESSION_PARTIIONS = dict()
+_SESSION_PARTITIONS = dict()
+_DB_FILENAME = "./_MPCI_MEMORY.pk"
 
 # These internal functions store computations of chern numbers
 
 def _get_chern_from_db(dims, degs):
     return _SESSION_CHERN_MEMORY.get((tuple(dims), tuple([tuple(d) for d in degs])))
+
 
 def _set_entry_in_db(dims, degs, chern_numbers=None):
     assert isinstance(chern_numbers, dict)
@@ -22,16 +25,31 @@ def _set_entry_in_db(dims, degs, chern_numbers=None):
         # create an empty dictionary otherwise
         _SESSION_CHERN_MEMORY[(tuple(dims), tuple([tuple(d) for d in degs]))] = dict()
 
+
+def load_memory():
+    with open(_DB_FILENAME, "rb") as f:
+        memory = pickle.load(f)
+    global _SESSION_CHERN_MEMORY
+    global _SESSION_PARTITIONS
+    _SESSION_CHERN_MEMORY = memory["chern"]
+    _SESSION_PARTITIONS = memory["parts"]
+
+
+def save_memory():
+    with open(_DB_FILENAME, "wb") as f:
+        pickle.dump({"chern": _SESSION_CHERN_MEMORY, "parts": _SESSION_PARTITIONS}, f)
+
+
 def all_partitions(n):
     """Returns all partitions of a positive integer n"""
-    if n in _SESSION_PARTIIONS.keys():
-        return _SESSION_PARTIIONS[n]
+    if n in _SESSION_PARTITIONS.keys():
+        return _SESSION_PARTITIONS[n]
     answer = set()
     answer.add((n, ))
     for i in range(1, n):
         for j in all_partitions(n - i):
             answer.add(tuple(sorted((i, ) + j)))
-    _SESSION_PARTIIONS[n] = answer
+    _SESSION_PARTITIONS[n] = answer
     return answer
 
 

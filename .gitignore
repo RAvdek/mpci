@@ -8,3 +8,5 @@ Pipfile.lock
 *.out
 # So I don't have to update this everytime I change computers...
 Pipfile
+# local memory file
+_MPCI_MEMORY.pk
