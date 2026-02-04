@@ -27,18 +27,34 @@ def _set_entry_in_db(dims, degs, chern_numbers=None):
 
 
 def load_memory():
-    with open(_DB_FILENAME, "rb") as f:
-        memory = pickle.load(f)
-    global _SESSION_CHERN_MEMORY
-    global _SESSION_PARTITIONS
-    _SESSION_CHERN_MEMORY = memory["chern"]
-    _SESSION_PARTITIONS = memory["parts"]
+    try:
+        with open(_DB_FILENAME, "rb") as f:
+            memory = pickle.load(f)
+        global _SESSION_CHERN_MEMORY
+        global _SESSION_PARTITIONS
+        _SESSION_CHERN_MEMORY = memory["chern"]
+        _SESSION_PARTITIONS = memory["parts"]
+    except OSError:
+        LOGGER.warning("No existing database file.")
 
 
 def save_memory():
     with open(_DB_FILENAME, "wb") as f:
         pickle.dump({"chern": _SESSION_CHERN_MEMORY, "parts": _SESSION_PARTITIONS}, f)
 
+
+def get_bernoulli(n):
+    """Return the nth Bernoulli number according to `topologists' conventions
+    as described in Milnor-Stasheff Characteristic classes"""
+    return -((-1)**n) * sympy.bernoulli(2 * n)
+
+def l_genus_top_coeff(n):
+    """Return the coefficient of p_{n} in L_{n}"""
+    output = get_bernoulli(n)
+    output *= 2**(2 * n)
+    output *= 2**((2 * n) - 1) - 1
+    output /= sympy.factorial(2 * n)
+    return output
 
 def all_partitions(n):
     """Returns all partitions of a positive integer n"""
@@ -72,6 +88,67 @@ def prod(array):
     while len(array) > 0:
         output *= array.pop(0)
     return output
+
+
+class BrieskornFiber(object):
+
+    def __init__(self, coeffs):
+        assert isinstance(coeffs, list)
+        assert len(coeffs) > 1
+        assert all([isinstance(x, int) for x in coeffs])
+        assert all([x > 1 for x in coeffs])
+        self.coeffs = coeffs
+        self.dim = len(coeffs) - 1
+        self._sigma = None
+
+    def get_rank_middle_hom(self):
+        """Compute the rank of the middle dimensional homology"""
+        return prod([x - 1 for x in self.coeffs])
+
+    def get_chi(self):
+        """Return Euler characteristic"""
+        return 1 + (self.get_rank_middle_hom() * (-1)** self.dim)
+
+    def get_sigma(self):
+        """Compute the signature as described in Hirzebruch's Bourbaki lecture
+        I am not sure if the signs match standard conventions"""
+        if self._sigma is not None:
+            return self._sigma
+        if self.dim % 2 != 0:
+            return 0
+        # generate lists of rationals r of the form
+        # sum_{0}^{n} a_{k}/coeff_{k}
+        # with a_{k} = 1,...,coeff_{k}-1
+        coeffs = self.coeffs[:]
+        rationals = [0]
+        while len(coeffs) > 0:
+            coeff = coeffs.pop()
+            new_rationals = list()
+            for c in range(1,coeff):
+                summand = sympy.Rational(c,coeff)
+                new_rationals += [r + summand for r in rationals]
+            rationals = new_rationals
+        # now we need to understand how many of the rationals r have either...
+        # (0 < r < 1 mod 2) or (1 < r < 2 mod 2)
+        # 0 < a/b < 1 + 2k iff 0 < a < b + 2bk iff 0 < a < b mod 2b
+        # 1 < a/b < 2k iff b < a < 2bk
+        sigma_plus = 0
+        sigma_minus = 0
+        for r in rationals:
+            top = r.numerator
+            bottom = r.denominator
+            if top & 2*bottom < bottom:
+                sigma_plus += 1
+            elif bottom < top:
+                sigma_minus += 1
+        self._sigma = sigma_plus - sigma_minus
+        return self._sigma
+
+    def get_gompf_boundary(self):
+        """Compute the Generalized Gompf invariant of the boundary... To appear in some article
+        This is tricky because I'm not sure that the sign of
+        signature will match the orientation correctly!"""
+        return 2*l_genus_top_coeff(self.dim)*self.get_chi() - self.get_sigma()
 
 
 class WPS(object):
