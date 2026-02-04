@@ -110,8 +110,7 @@ class BrieskornFiber(object):
         return 1 + (self.get_rank_middle_hom() * (-1)** self.dim)
 
     def get_sigma(self):
-        """Compute the signature as described in Hirzebruch's Bourbaki lecture
-        I am not sure if the signs match standard conventions"""
+        """Compute the signature as described in Hirzebruch's Bourbaki lecture"""
         if self._sigma is not None:
             return self._sigma
         if self.dim % 2 != 0:

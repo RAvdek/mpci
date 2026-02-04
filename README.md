@@ -79,6 +79,23 @@ sessions.
 Note that these work with a single file! If you use `save_memory`, the information from your current session
 will overwrite any previous computations. Likewise, `load_memory` will overwrite your current computations.
 
+## Brieskorn-Pham Milnor fibers
+
+Here we compute the dimension, rank of `H_2` (AKA Milnor number), Euler char, and signature 
+of the `[2,3,5]` Brieskorn-Pham Milnor fiber, whose link is the Poincaré homology sphere:   
+```
+>>> f = mpci.BrieskornFiber([2,3,5])
+>>> f.dim
+2
+>>> f.get_rank_middle_hom()
+8
+>>> f.get_chi()
+9
+>>> f.get_sigma()
+-6
+```
+This functionality is new and needs to be tested against examples.
+
 ## Cobordism rings
 
 Recall that multiprojective spaces generate `Omega^{U}_{*}` tensor Q and that milnor hypersurfaces
