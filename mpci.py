@@ -35,7 +35,7 @@ def load_memory():
         _SESSION_CHERN_MEMORY = memory["chern"]
         _SESSION_PARTITIONS = memory["parts"]
     except OSError:
-        LOGGER.warning("No existing database file.")
+        LOGGER.warning("No database file found. Use save_memory() at the end of your session to create one.")
 
 
 def save_memory():
@@ -43,10 +43,15 @@ def save_memory():
         pickle.dump({"chern": _SESSION_CHERN_MEMORY, "parts": _SESSION_PARTITIONS}, f)
 
 
+def e_2pii(num, denom):
+    frac = sympy.Rational(num, denom) * 2 * sympy.pi
+    return sympy.cos(frac) + sympy.I * sympy.sin(frac)
+
+
 def get_bernoulli(n):
     """Return the nth Bernoulli number according to `topologists' conventions
     as described in Milnor-Stasheff Characteristic classes"""
-    return -((-1)**n) * sympy.bernoulli(2 * n)
+    return int(-((-1)**n)) * sympy.bernoulli(2 * n)
 
 def l_genus_top_coeff(n):
     """Return the coefficient of p_{n} in L_{n}"""
@@ -82,6 +87,8 @@ def prod(array):
     :param array: list
     :return: obj
     """
+    # make a copy so we don't corrupt a mutable object
+    array = list(array)[:]
     if len(array) == 0:
         return 1
     output = array.pop(0)
@@ -97,9 +104,13 @@ class BrieskornFiber(object):
         assert len(coeffs) > 1
         assert all([isinstance(x, int) for x in coeffs])
         assert all([x > 1 for x in coeffs])
-        self.coeffs = coeffs
+        # store coeffs as tuple so its immutable
+        self.coeffs = tuple(coeffs)
         self.dim = len(coeffs) - 1
         self._sigma = None
+        self._monodromy_eigenvalues = None
+        self._monodromy_polynomial = None
+        self._monodromy_polynomial_var = sympy.Symbol("z")
 
     def get_rank_middle_hom(self):
         """Compute the rank of the middle dimensional homology"""
@@ -109,8 +120,87 @@ class BrieskornFiber(object):
         """Return Euler characteristic"""
         return 1 + (self.get_rank_middle_hom() * (-1)** self.dim)
 
+    def get_monodromy_eigenvalues(self):
+        """Return a list of monodromy eigenvalues (with repetition)"""
+        # Return if already computed
+        if self._monodromy_eigenvalues is not None:
+            return self._monodromy_eigenvalues
+        # Compute from https://webhomes.maths.ed.ac.uk/~v1ranick/slides/singexot.pdf
+        # which yields the same determinant as https://www.numdam.org/item/SB_1966-1968__10__13_0.pdf
+        # each eigenvalue is of the form
+        # e^{2pi * i * k_{0} / c_{0}} * ... * e^{2pi * i * k_{n} / c_{n}} = e^{2pi * i * X}
+        # x = (sum_{i=0}^{n} (k_{i} prod_{j \neq i}c_{j}))/ (prod_{0}^{n} c_{j})
+        # where c_{j} = self.coeffs[j] and 0 < k_{j} < c_{j}
+        # so we need to compute all possible X  = x * (prod c_{j})
+        # start by enumerating the summands
+        x_summands = {i: list() for i in range(len(self.coeffs))}
+        for i in range(len(self.coeffs)):
+            coeff = self.coeffs[i]
+            prod_all_others = prod([self.coeffs[k] for k in range(len(self.coeffs)) if k != i])
+            for j in range(1, coeff):
+                x_summands[i].append( j * prod_all_others)
+        big_xs = [0]
+        indices = list(range(len(self.coeffs)))
+        while len(indices) > 0:
+            i = indices.pop()
+            new_bigxs = [x + y for x in big_xs for y in x_summands[i]]
+            big_xs = new_bigxs
+        prod_all_coeffs = prod(self.coeffs)
+        eigenvalues = [e_2pii(big_x, prod_all_coeffs) for big_x in big_xs]
+        # a quick sanity check
+        assert len(eigenvalues) == self.get_rank_middle_hom()
+        self._monodromy_eigenvalues = eigenvalues
+        return eigenvalues
+
+    def get_monodromy_polynomial(self, val=None):
+        """Compute determinant of the homological milnor monodromy"""
+        if self._monodromy_polynomial is None:
+            # compute if not already available
+            poly = 1
+            for v in self.get_monodromy_eigenvalues():
+                poly *= (self._monodromy_polynomial_var - v)
+            self._monodromy_polynomial = sympy.simplify(poly)
+        if val is None:
+            return self._monodromy_polynomial
+        output = self._monodromy_polynomial.subs({self._monodromy_polynomial_var: val})
+        return sympy.simplify(output)
+
+    def boundary_is_homotopy_sphere(self):
+        """Returns True or False using the fact that the boundary is a homotopy sphere
+        iff det(1-monodromy) = \pm 1"""
+        return self.get_monodromy_polynomial(1) in [-1,1]
+
+    def get_kervaire(self):
+        """Get the kervaire invariant if the complex dimension is odd"""
+        if self.dim % 2 == 0:
+            raise ValueError("Kervaire invariant only applicable in odd complex dimension")
+        v = self.get_monodromy_polynomial(val=-1) % 8
+        if v in [3,5]:
+            return 1
+        return 0
+
+    def get_bp4m_boundary(self):
+        """Returns x, m where
+        - the boundary is x times the generator of bP_{4m},
+        - m is the order of bP_{4m}
+        Here 4m is the real dim of the Milnor fiber and bP_{4m} is the group of homotopy
+        spheres bounding parallelizable manifolds"""
+        if self.dim % 2 != 0:
+            raise ValueError("Complex dimension not divisible by 2")
+        if not self.boundary_is_homotopy_sphere():
+            raise ValueError("Boundary is not a homotopy sphere")
+        # compute order of bP_{4m}, using real dim / 4 = complex dim / 2
+        v = get_bernoulli(self.dim / 2)
+        print(v)
+        v *= sympy.Rational(4,self.dim)
+        v = v.numerator
+        order_bp4m = v * (2**(self.dim - 2)) * (2**(self.dim - 1) - 1)
+        assert self._sigma % 8 == 0
+        return (self.get_sigma() / 8) % order_bp4m, order_bp4m
+
     def get_sigma(self):
         """Compute the signature as described in Hirzebruch's Bourbaki lecture"""
+        raise NotImplementedError("This function is broken!")
         if self._sigma is not None:
             return self._sigma
         if self.dim % 2 != 0:
@@ -118,7 +208,7 @@ class BrieskornFiber(object):
         # generate lists of rationals r of the form
         # sum_{0}^{n} a_{k}/coeff_{k}
         # with a_{k} = 1,...,coeff_{k}-1
-        coeffs = self.coeffs[:]
+        coeffs = list(self.coeffs)[:]
         rationals = [0]
         while len(coeffs) > 0:
             coeff = coeffs.pop()
@@ -140,6 +230,7 @@ class BrieskornFiber(object):
                 sigma_plus += 1
             elif bottom < top:
                 sigma_minus += 1
+        print(sigma_plus, sigma_minus)
         self._sigma = sigma_plus - sigma_minus
         return self._sigma
 

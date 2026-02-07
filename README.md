@@ -94,7 +94,16 @@ of the `[2,3,5]` Brieskorn-Pham Milnor fiber, whose link is the Poincaré homolo
 >>> f.get_sigma()
 -6
 ```
-This functionality is new and needs to be tested against examples.
+Now we investigate the case `[3,2,2,2,2,2]` whose boundary is an exotic homotopy 9-sphere, since its Arf-Kervaire invariant is `1`:
+```
+>>> mf = mpci.BrieskornFiber([3,2,2,2,2,2])
+>>> mf.get_monodromy_polynomial()
+z**2 - z + 1
+>>> mf.boundary_is_homotopy_sphere()
+True
+>>> mf.get_kervaire()
+1
+```
 
 ## Cobordism rings
 
