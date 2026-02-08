@@ -191,16 +191,14 @@ class BrieskornFiber(object):
             raise ValueError("Boundary is not a homotopy sphere")
         # compute order of bP_{4m}, using real dim / 4 = complex dim / 2
         v = get_bernoulli(self.dim / 2)
-        print(v)
         v *= sympy.Rational(4,self.dim)
         v = v.numerator
         order_bp4m = v * (2**(self.dim - 2)) * (2**(self.dim - 1) - 1)
         assert self._sigma % 8 == 0
-        return (self.get_sigma() / 8) % order_bp4m, order_bp4m
+        return (self.get_sigma() // 8) % order_bp4m, order_bp4m
 
     def get_sigma(self):
         """Compute the signature as described in Hirzebruch's Bourbaki lecture"""
-        raise NotImplementedError("This function is broken!")
         if self._sigma is not None:
             return self._sigma
         if self.dim % 2 != 0:
@@ -208,6 +206,19 @@ class BrieskornFiber(object):
         # generate lists of rationals r of the form
         # sum_{0}^{n} a_{k}/coeff_{k}
         # with a_{k} = 1,...,coeff_{k}-1
+        # Inspection on some examples indicates that the code looks good...
+        # what should we get for [5,3,2,2,2]
+        #
+        # rationals come from sequences
+        # (1,1,1,1,1), (1,2,1,1,1) -> 1/5 + 1/3 + 3/2, 1/5 + 2/3 + 3/2 -> (6 + 10 + 45)/30, (6 + 20 + 45)/30
+        # (2,1,1,1,1), (2,2,1,1,1) -> 2/5 + 1/3 + 3/2, 2/5 + 2/3 + 3/2 -> (12 + 10 + 45)/30, (12 + 20 + 45)/30
+        # (3,1,1,1,1), (3,2,1,1,1) -> 3/5 + 1/3 + 3/2, 3/5 + 2/3 + 3/2 -> (18 + 10 + 45)/30, (18 + 20 + 45)/30
+        # (4,1,1,1,1), (4,2,1,1,1) -> 4/5 + 1/3 + 3/2, 4/5 + 2/3 + 3/2 -> (24 + 10 + 45)/30, (24 + 20 + 45)/30
+        #
+        # 61/30, 71/30 -> 2.03, 2.36
+        # 67/30, 77/30 -> 2.23, 2.56
+        # 73/30, 83/30 -> 2.43, 2.76
+        # 79/30, 89/30 -> 2.63, 2.96
         coeffs = list(self.coeffs)[:]
         rationals = [0]
         while len(coeffs) > 0:
@@ -226,11 +237,10 @@ class BrieskornFiber(object):
         for r in rationals:
             top = r.numerator
             bottom = r.denominator
-            if top & 2*bottom < bottom:
+            if top % 2*bottom < bottom:
                 sigma_plus += 1
             elif bottom < top:
                 sigma_minus += 1
-        print(sigma_plus, sigma_minus)
         self._sigma = sigma_plus - sigma_minus
         return self._sigma
 

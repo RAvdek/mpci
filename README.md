@@ -1,14 +1,11 @@
 # MPCI: Multi-projective Complete Intersections
 
-A python package for studying complete intersections in products of projective spaces and complex cobordism rings.
+A python package originally developed to study complete intersections in products of projective spaces.
+Newer functionality adresses computational aspects of Brieskorn-Pham Milnor fibers, cobordism rings, 
+and cohomology of projective spaces.  
 The goal is to carry out some quick computations and search for interesting examples.
 There are many existing packages which deal with varieties in a single projective space,
 and looking at varieties in products yields more examples.
-
-The package can compute Chern numbers of these varieties and describe varieties spanning `Omega^{U}_{2n}`
-with redundancies. It can also compute Chern numbers of branched covers when the branch locus
-is another complete intersection. There is also some functionality for studying numerical properties
-of weighted projective spaces. See the examples below.
 
 Users are warned that the computational results have not been rigorously tested,
 only checked against examples which I've worked out by hand.
@@ -20,6 +17,9 @@ please contact me at my gmail address.
 To use the package, launch python from the root of this directory.
 You'll need to have the `sympy` python package installed or use a virtual environment.
 See the installation details below.
+
+## Complete intersections in multi-projective spaces
+
 For documentation of the functions, you'll have to look at the code and follow these examples for now :)
 ```
 $ python
@@ -81,20 +81,25 @@ will overwrite any previous computations. Likewise, `load_memory` will overwrite
 
 ## Brieskorn-Pham Milnor fibers
 
+The functionality here implements computations in Hirzebruch's Bourbaki lecture on 
+[Singularities and exotic spheres][https://www.numdam.org/item/SB_1966-1968__10__13_0.pdf].
+
 Here we compute the dimension, rank of `H_2` (AKA Milnor number), Euler char, and signature 
 of the `[2,3,5]` Brieskorn-Pham Milnor fiber, whose link is the Poincaré homology sphere:   
 ```
->>> f = mpci.BrieskornFiber([2,3,5])
->>> f.dim
+>>> mf = mpci.BrieskornFiber([2,3,5])
+>>> mf.dim
 2
->>> f.get_rank_middle_hom()
+>>> mf.get_rank_middle_hom()
 8
->>> f.get_chi()
+>>> mf.get_chi()
 9
->>> f.get_sigma()
--6
+>>> mf.get_sigma()
+-8
 ```
-Now we investigate the case `[3,2,2,2,2,2]` whose boundary is an exotic homotopy 9-sphere, since its Arf-Kervaire invariant is `1`:
+Now we look at `[3,2,2,2,2,2]` which is a plumbing of two copies of `T^{*}S^{5}`. 
+The boundary is a homotopy sphere as we infer by looking at the characteristic polynomial of the monodromy.
+The boundary is an exotic 9-sphere, since its Arf-Kervaire invariant is `1`:
 ```
 >>> mf = mpci.BrieskornFiber([3,2,2,2,2,2])
 >>> mf.get_monodromy_polynomial()
@@ -103,6 +108,18 @@ z**2 - z + 1
 True
 >>> mf.get_kervaire()
 1
+```
+Here we look at `5,3,2,2,2` whose boundary has dimension 7. In this case the signature divided by 8 tells us
+the corresponding element of the group `bP_8` of homotopy spheres bounding parallelizable 8-manifolds. 
+```
+>>> import mpci
+>>> mf = mpci.BrieskornFiber([5,3,2,2,2])
+>>> mf.get_sigma()
+-8
+>>> mf.boundary_is_homotopy_sphere()
+True
+>>> mf.get_bp4m_boundary()
+(27, 28)
 ```
 
 ## Cobordism rings
