@@ -51,7 +51,25 @@ def e_2pii(num, denom):
 def get_bernoulli(n):
     """Return the nth Bernoulli number according to `topologists' conventions
     as described in Milnor-Stasheff Characteristic classes"""
+    if n == 0:
+        return 1
     return int(-((-1)**n)) * sympy.bernoulli(2 * n)
+
+
+def l_series_func(n):
+    if n == 0:
+        return 1
+    coeff = sympy.bernoulli(2 * n)
+    coeff *= 2 ** (2 * n)
+    coeff /= sympy.factorial(2 * n)
+    return coeff
+
+
+def todd_series_func(n):
+    coeff = sympy.bernoulli(n)
+    coeff /= sympy.factorial(n)
+    return coeff
+
 
 def l_genus_top_coeff(n):
     """Return the coefficient of p_{n} in L_{n}"""
@@ -95,6 +113,72 @@ def prod(array):
     while len(array) > 0:
         output *= array.pop(0)
     return output
+
+
+class Genus(object):
+
+    def __init__(self, series, n_vars):
+        self.series = series
+        self.n_vars = n_vars
+        self._n_vars_names = [sympy.Symbol(f"x{i}") for i in range(1, self.n_vars + 1)]
+        self._symmetric_poly = None
+        self._symmetric_degs = None
+        self._set_evaluation()
+        self._set_symmetric_degrees()
+
+    def _set_evaluation(self):
+        # build polynomial f up to n variables
+        poly = 1
+        for v in self._n_vars_names:
+            poly *= self.series.subs({'t': v})
+        symmetrized = sympy.polys.polyfuncs.symmetrize(poly, formal=True)
+        self._symmetric_poly = symmetrized[0].as_poly()
+
+    def _set_symmetric_degrees(self):
+        # this is very stupid and assumes that symmetric functions are called sn
+        degs = dict()
+        for g in self._symmetric_poly.gens:
+            degs[g] = int(g.name.split('s')[1])
+        self._symmetric_degs = degs
+
+    def get_symmetric_poly(self, deg=None):
+        poly = self._symmetric_poly
+        if not deg:
+            return poly
+        if not deg > self.n_vars:
+            # We get errors which I currently don't understand when deg=n_vars
+            raise ValueError("Degree of symmetric poly must be less than degree")
+        gens = poly.gens
+        poly_dict = poly.as_dict()
+        output = 0
+        for k in poly_dict.keys():
+            n_keys = len(k)
+            d = sum([(i + 1)* k[i] for i in range(n_keys)])
+            if d == deg:
+                output += prod([gens[i] ** k[i] for i in range(n_keys)]) * poly_dict[k]
+        return output
+
+    def get_symmetric_degrees(self):
+        return self._symmetric_degs
+
+    @classmethod
+    def from_series_function(cls, series_func, n_vars):
+        t = sympy.Symbol("t")
+        sf_zero = series_func(0)
+        if sf_zero != 1:
+            raise ValueError(f"series_func(0) = f{sf_zero} != 1")
+        series = sum([series_func(k)*(t**k) for k in range(n_vars)])
+        return cls(series, n_vars)
+
+    @classmethod
+    def L(cls, n_vars):
+        """L genus from the Hirzebruch signature theorem"""
+        return cls.from_series_function(l_series_func, n_vars)
+
+    @classmethod
+    def Todd(cls, n_vars):
+        """The Todd genus"""
+        return cls.from_series_function(todd_series_func, n_vars)
 
 
 class BrieskornFiber(object):
@@ -712,3 +796,6 @@ def get_euler_only(n, su=False):
                 for v in nullspace
             ]
     return sympy.gcd(eulers)
+
+
+[mpci.get_bernoulli(k)/(mpci.sympy.factorial(2 * k)) if k % 2 == 0 else mpci.get_bernoulli(k)/(2*mpci.sympy.factorial(2 * k))for k in range(5)]
