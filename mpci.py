@@ -796,6 +796,3 @@ def get_euler_only(n, su=False):
                 for v in nullspace
             ]
     return sympy.gcd(eulers)
-
-
-[mpci.get_bernoulli(k)/(mpci.sympy.factorial(2 * k)) if k % 2 == 0 else mpci.get_bernoulli(k)/(2*mpci.sympy.factorial(2 * k))for k in range(5)]
