@@ -668,7 +668,7 @@ def milnors_cobordant_to_multiproj(dim, log=False):
     """
     milnors = list()
     i = 1
-    while 2*i <= dim:
+    while 2*i <= dim + 1:
         milnors.append(CompIntersection(MultiProj([i, dim + 1 - i]), [[1,1]]))
         i += 1
     if len(milnors) == 0:
@@ -686,47 +686,42 @@ def get_additive_cob_gens(n, log=False):
     This will contain lots of redundancies!
     We take all products of projective spaces and milnor hypersurfaces of dim > 2
     Recall the milnor hypersurface of dim = i + j - 1 is the deg=[1,1] hypersurface in (P^i)x(P^j)
-
-    TODO: We really need to cut down on redundancies.
-    The most expensive computations come from computing chern numbers of the big products involving
-    milnor hypersurfaces. We can try to figure out which are already covered by multi-projective spaces
     """
-    output = [CompIntersection(MultiProj(p), []) for p in all_partitions(n)]
-    if n <= 2:
-        return output
-    # get all of the milnor hypersurfaces of dim<=n
-    # indexed by (i,j) with i<= j so that dim=i+j-1
-    # We represent as a dict {dim: set of indices}
-    # We exclude those hypersurfaces which are integrally bordant to products of projective spaces
-    milnor_indices = dict()
-    for milnor_dim in range(3,n+1):
-        excluded_indices = milnors_cobordant_to_multiproj(milnor_dim, log=log)
-        milnor_indices[milnor_dim] = set()
-        i = 1
-        while i <= milnor_dim:
-            j = milnor_dim-i+1
-            if i <= j:
-                if [i,j] not in excluded_indices:
-                    milnor_indices[milnor_dim].add((i,j))
-            i += 1
-    for total_milnor_dim in range(3,n+1):
-        milnor_dim_parts = [p for p in all_partitions(total_milnor_dim) if all([x > 2 for x in p])]
-        milnor_multi_dims = list()
-        for p in milnor_dim_parts:
-             milnor_multi_dims += itertools.product(*[milnor_indices[x] for x in p])
-        milnor_multi_dims = list(set(milnor_multi_dims))
-        proj_dims = all_partitions(n - total_milnor_dim)
-        for md in milnor_multi_dims:
-            for pd in proj_dims:
-                mfld = CompIntersection(MultiProj([md[0][0],md[0][1]]), [[1,1]])
-                for i in range(1, len(md)):
-                    mfld = mfld.get_product(
-                        CompIntersection(MultiProj([md[i][0],md[i][1]]), [[1,1]])
-                    )
-                if not total_milnor_dim == n:
-                    projective_part = CompIntersection(MultiProj(pd),[])
-                    mfld = mfld.get_product(projective_part)
-                output.append(mfld)
+    # want to generate a list of all possible multiplicative generators of dim < n
+    # I'll just record the dims and degs as I don't need the actual objects yet
+    gens=list()
+    i = 1
+    while i <= n:
+        # add all of the projective spaces
+        # d is tuple of dims, degs
+        gens.append(CompIntersection(MultiProj([i]), []))
+        # all of the milnor hypersurfaces except those cobordand to multiprojs
+        to_exclude = milnors_cobordant_to_multiproj(i)
+        if i >= 3:
+            j = 1
+            while 2*j <= i + 1:
+                mfld = CompIntersection(MultiProj([j, i+1-j]), [[1,1]])
+                if mfld not in to_exclude:
+                    gens.append(mfld)
+                j+=1
+        i += 1
+    output = list()
+    under_construction = [{"last_index": i,"manifold": v} for i, v in enumerate(gens)]
+    while len(under_construction) > 0:
+        for d in under_construction:
+            if d["manifold"].total_dim == n:
+                output.append(d["manifold"])
+                under_construction.remove(d)
+            else:
+                for i, v in enumerate(gens):
+                    if d["last_index"] <= i and d["manifold"].total_dim + v.total_dim <= n:
+                        under_construction.append({
+                            "last_index": i,
+                            "manifold": d["manifold"].get_product(v)
+                        })
+                under_construction.remove(d)
+    output = sorted(output, key=lambda mfld: mfld.mp.dims)
+    assert all([x.total_dim == n for x in output])
     return output
 
 
@@ -795,4 +790,4 @@ def get_euler_only(n, su=False):
                 sum(v[i] * chern_numbers[str(upper_gens[i])][_EULER_INDEX] for i in range(len(upper_gens)))
                 for v in nullspace
             ]
-    return sympy.gcd(eulers)
+    return abs(sympy.gcd(eulers))
