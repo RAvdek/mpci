@@ -560,6 +560,35 @@ class CompIntersection(object):
         big_c = c * self.chern_normal
         return self.mp.integrate(big_c)
 
+    def get_s_number(self):
+        """Compute the Milnor s-number s_n[M] where n = self.total_dim.
+
+        The s-number is defined via Newton's identities relating power sum
+        symmetric functions to elementary symmetric functions (= Chern classes):
+
+            s_1 = c_1
+            s_k = c_1*s_{k-1} - c_2*s_{k-2} + ... + (-1)^{k-1} * k * c_k
+
+        Then s_n[M] = sum_{I partition of n} coeff(I) * c_I[M],
+        where the coefficients are determined by expanding s_n as a polynomial
+        in the Chern classes.
+
+        KEY PROPERTIES:
+        - s_n(CP^n) = n+1
+        - s_n(H_{r,s}) = -binom(r+s, r) for the Milnor hypersurface H_{r,s}
+          (the (1,1)-divisor in CP^r x CP^s) of dimension r+s-1 = n.
+        - s_n(M x N) = 0 when dim_C(M) > 0 and dim_C(N) > 0.
+        """
+        n = self.total_dim
+        if n < 1:
+            raise ValueError("s-number not defined for dimension 0")
+        newton_coeffs = _get_newton_coeffs(n)
+        chern_numbers = self.get_all_chern_numbers()
+        result = 0
+        for partition, coeff in newton_coeffs.items():
+            result += coeff * chern_numbers[partition]
+        return result
+
     def get_chern_numbers_branched(self, branch_deg, branch_order, verbose=False):
         """Use Izawas formula to compute Chern numbers of the variety obtained by branching the complete intersection
         along a subvariety specified by a branch degreee, with specified branch order. Follows the article...
@@ -791,4 +820,277 @@ def get_euler_only(n, su=False):
                 sum(v[i] * chern_numbers[str(upper_gens[i])][_EULER_INDEX] for i in range(len(upper_gens)))
                 for v in nullspace
             ]
+    return abs(sympy.gcd(eulers))
+
+
+# =============================================================================
+# Newton polynomial coefficients for s-number computation
+# =============================================================================
+
+# Cache for Newton polynomial coefficients: maps n -> dict {partition: coeff}
+_SESSION_NEWTON_COEFFS = dict()
+
+
+def _get_newton_coeffs(n):
+    """Compute the coefficients expressing s_n as a Z-linear combination
+    of Chern numbers c_I, where I ranges over partitions of n.
+
+    Uses Newton's identities:
+        s_1 = c_1
+        s_k = c_1*s_{k-1} - c_2*s_{k-2} + ... + (-1)^{k-1} * k * c_k
+
+    Returns a dict {partition: coefficient} such that
+        s_n[M] = sum_{I partition of n} coefficient(I) * c_I[M]
+
+    DERIVATION: Each s_k is a polynomial in c_1, ..., c_k of weighted degree k
+    (where deg(c_j) = j). When we expand s_n as a sum of monomials
+    c_1^{a_1} * c_2^{a_2} * ... * c_n^{a_n} with sum(j * a_j) = n,
+    each such monomial corresponds to the partition I where j appears a_j times.
+    The Chern number c_I[M] is the integral of this monomial over [M].
+    """
+    if n in _SESSION_NEWTON_COEFFS:
+        return _SESSION_NEWTON_COEFFS[n]
+
+    c_symbols = {i: sympy.Symbol(f'c{i}') for i in range(1, n + 1)}
+    s = {}
+    s[1] = c_symbols[1]
+    for k in range(2, n + 1):
+        val = 0
+        for j in range(1, k):
+            val += (-1) ** (j - 1) * c_symbols[j] * s[k - j]
+        val += (-1) ** (k - 1) * k * c_symbols[k]
+        s[k] = sympy.expand(val)
+
+    sn_poly = sympy.Poly(s[n], *[c_symbols[i] for i in range(1, n + 1)])
+    coeffs = {}
+    for monom, coeff in zip(sn_poly.monoms(), sn_poly.coeffs()):
+        partition = []
+        for j in range(n):
+            k = j + 1
+            partition.extend([k] * monom[j])
+        partition = tuple(sorted(partition))
+        coeffs[partition] = int(coeff)
+
+    _SESSION_NEWTON_COEFFS[n] = coeffs
+    return coeffs
+
+
+def _is_prime_power(m):
+    """Check if m >= 2 is a prime power p^k with k >= 1.
+    Returns (True, p, k) if so, (False, None, None) otherwise.
+    """
+    if m < 2:
+        return False, None, None
+    f = sympy.factorint(m)
+    if len(f) == 1:
+        p, k = list(f.items())[0]
+        return True, p, k
+    return False, None, None
+
+
+def _extended_gcd_list(values):
+    """Given a list of integers [v_0, v_1, ..., v_m], find integer coefficients
+    [a_0, a_1, ..., a_m] such that sum(a_i * v_i) = gcd(v_0, ..., v_m).
+
+    Uses iterative application of the extended Euclidean algorithm.
+    Returns (gcd_value, coefficients_list).
+    """
+    if len(values) == 0:
+        raise ValueError("Empty list")
+    if len(values) == 1:
+        sign = 1 if values[0] >= 0 else -1
+        return abs(values[0]), [sign]
+
+    s, t, g = sympy.gcdex(values[0], values[1])
+    coeffs = [int(s), int(t)]
+
+    for i in range(2, len(values)):
+        s_new, t_new, g_new = sympy.gcdex(g, values[i])
+        coeffs = [int(s_new) * c for c in coeffs] + [int(t_new)]
+        g = g_new
+
+    return int(g), coeffs
+
+
+# =============================================================================
+# Polynomial generators and minimal additive basis of Omega^U_{2n}
+# =============================================================================
+
+def get_polynomial_generator(n, log=False):
+    """Return a polynomial generator x_n of Omega^U_* in complex dimension n.
+
+    The result is a list of (coefficient, CompIntersection) pairs representing
+    a formal Z-linear combination of manifolds:
+
+        x_n = sum_i  a_i * [M_i]   in Omega^U_{2n}
+
+    such that x_n satisfies Milnor's criterion for a polynomial generator:
+      - If n+1 = p^k (prime power), then s_n(x_n) = +/-p.
+      - If n+1 is NOT a prime power, then s_n(x_n) = +/-1.
+
+    NOTE: The criterion is s_n = +/-p (exactly), NOT merely v_p(s_n) = 1.
+    See Milnor-Stasheff "Characteristic Classes" Appendix B, Theorem 2.
+
+    GENERATOR CHOICES:
+      (a) If n+1 is prime: x_n = CP^n, since s_n(CP^n) = n+1 = p. Single term.
+      (b) Otherwise: we form a minimal Z-linear combination of CP^n and
+          Milnor hypersurfaces H_{r, n+1-r} (for 2 <= r <= floor((n+1)/2))
+          such that s_n(x_n) equals the target value (+/-p or +/-1).
+
+    AVAILABLE s-NUMBERS:
+      s_n(CP^n) = n+1
+      s_n(H_{r,s}) = -binom(n+1, r) for H_{r,s} with r+s = n+1, r >= 2
+
+    When n+1 = p^k, all of these are divisible by p (Kummer's theorem), so gcd = p.
+    When n+1 is not a prime power, gcd = 1.
+    We find the combination using the extended Euclidean algorithm.
+    """
+    is_pp, p, k = _is_prime_power(n + 1)
+
+    if is_pp and k == 1:
+        cpn = CompIntersection(MultiProj([n]), [])
+        if log:
+            LOGGER.info(f"dim {n}: x_{n} = CP^{n}, s_{n} = {n+1} (prime)")
+        return [(1, cpn)]
+
+    manifolds = [CompIntersection(MultiProj([n]), [])]
+    s_values = [n + 1]
+
+    for r in range(2, (n + 1) // 2 + 1):
+        s = n + 1 - r
+        manifolds.append(CompIntersection(MultiProj([r, s]), [[1, 1]]))
+        s_values.append(-int(sympy.binomial(n + 1, r)))
+
+    g, coeffs = _extended_gcd_list(s_values)
+
+    if is_pp:
+        assert g == p, (
+            f"GCD of s-numbers is {g}, expected {p} for n+1={n+1}={p}^{k}")
+    else:
+        assert g == 1, (
+            f"GCD of s-numbers is {g}, expected 1 for n+1={n+1} not a prime power")
+
+    result = [(int(c), m) for c, m in zip(coeffs, manifolds) if c != 0]
+
+    if log:
+        sn_check = sum(c * sv for c, sv in zip(coeffs, s_values))
+        terms = [f"{c}*[{m}]" for c, m in result]
+        LOGGER.info(f"dim {n}: x_{n} = {' + '.join(terms)}, s_{n} = {sn_check}")
+
+    return result
+
+
+def get_additive_cob_gens_v2(n, log=False):
+    """Compute a Z-basis of Omega^U_{2n} using Milnor's polynomial generators.
+
+    Returns (partitions_list, basis_list) where:
+      - partitions_list: sorted list of partitions of n (one per basis element)
+      - basis_list: list of cobordism classes, each a list of (coeff, CompIntersection)
+
+    MATHEMATICAL DESCRIPTION:
+    Let x_1, x_2, ..., x_n be polynomial generators of Omega^U_* chosen by
+    get_polynomial_generator(). A Z-basis of Omega^U_{2n} consists of all
+    monomials x_{i_1} * ... * x_{i_k} with i_1 <= ... <= i_k and
+    i_1 + ... + i_k = n. There are p(n) such monomials.
+
+    Each monomial x_{i_1} * ... * x_{i_k} is expanded by multilinearity:
+    if x_{i_j} = sum_l a_{jl} M_{jl}, then the product is
+        sum_{l_1,...,l_k} (prod_j a_{j,l_j}) * (M_{1,l_1} x ... x M_{k,l_k})
+    """
+    if log:
+        LOGGER.info(f"Computing additive generators for dim {n}")
+
+    poly_gens = {}
+    for m in range(1, n + 1):
+        poly_gens[m] = get_polynomial_generator(m, log=log)
+
+    parts = sorted(all_partitions(n))
+    basis = []
+
+    for part in parts:
+        if log:
+            LOGGER.info(f"  Building basis element for partition {part}")
+
+        current = [(c, m) for c, m in poly_gens[part[0]]]
+        for idx in range(1, len(part)):
+            factor = poly_gens[part[idx]]
+            new_current = []
+            for c1, m1 in current:
+                for c2, m2 in factor:
+                    new_current.append((c1 * c2, m1.get_product(m2)))
+            current = new_current
+        basis.append(current)
+
+    assert len(basis) == len(parts)
+    return parts, basis
+
+
+def get_cob_gen_chern_numbers(n, log=False):
+    """Compute the Chern number matrix for a Z-basis of Omega^U_{2n}.
+
+    Returns (cn_parts, basis_partitions, chern_matrix) where:
+      - cn_parts: sorted list of partitions of n (Chern number indices)
+      - basis_partitions: sorted list of partitions of n (basis element labels)
+      - chern_matrix: list of dicts, one per basis element, mapping
+        Chern number partitions to integer values.
+
+    Each basis element is a Z-linear combination sum_j a_j [M_j], so its
+    Chern numbers are sum_j a_j * c_I(M_j) for each partition I.
+    """
+    basis_partitions, basis = get_additive_cob_gens_v2(n, log=log)
+    cn_parts = sorted(all_partitions(n))
+    chern_matrix = []
+
+    for i, (basis_part, cobordism_class) in enumerate(zip(basis_partitions, basis)):
+        if log:
+            LOGGER.info(f"  Computing Chern numbers for basis element {basis_part}")
+        cn_dict = {p: 0 for p in cn_parts}
+        for coeff, manifold in cobordism_class:
+            mfld_cn = manifold.get_all_chern_numbers(log=log)
+            for p in cn_parts:
+                cn_dict[p] += coeff * mfld_cn[p]
+        chern_matrix.append(cn_dict)
+
+    return cn_parts, basis_partitions, chern_matrix
+
+
+def get_euler_only_v2(n, log=False):
+    """Compute M_{2n}: the GCD of c_{(n)}(X) over all X in T_{2n}.
+
+    Here T_{2n} is the subgroup of Omega^U_{2n} defined by
+        c_I(X) = 0 for all partitions I of n with I != (n).
+
+    ALGORITHM:
+    1. Compute a Z-basis of Omega^U_{2n} and their Chern numbers.
+    2. Form the matrix M whose rows are the Chern numbers c_I for I != (n),
+       one column per basis element.
+    3. Compute the integer kernel of M (= the subgroup T_{2n}).
+    4. For each kernel vector, compute c_{(n)} and return the GCD.
+    """
+    assert n > 1
+    cn_parts, basis_partitions, chern_matrix = get_cob_gen_chern_numbers(n, log=log)
+
+    _EULER_INDEX = (n,)
+    non_euler_parts = [p for p in cn_parts if p != _EULER_INDEX]
+    m = []
+    for cn_dict in chern_matrix:
+        m.append([cn_dict[p] for p in non_euler_parts])
+
+    if log:
+        LOGGER.info(f"Constraint matrix: {len(m)} rows x {len(non_euler_parts)} cols")
+        LOGGER.info("Computing integer nullspace...")
+
+    nullspace = get_z_kernel(m, transpose=True)
+
+    if log:
+        LOGGER.info(f"Nullspace has {len(nullspace)} vectors")
+
+    eulers = []
+    for v in nullspace:
+        euler = sum(v[i] * chern_matrix[i][_EULER_INDEX] for i in range(len(chern_matrix)))
+        eulers.append(euler)
+
+    if log:
+        LOGGER.info(f"Euler values: {eulers}")
+
     return abs(sympy.gcd(eulers))
