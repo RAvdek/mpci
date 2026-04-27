@@ -701,7 +701,7 @@ def get_additive_cob_gens(n, log=False):
             j = 1
             while 2*j <= i + 1:
                 mfld = CompIntersection(MultiProj([j, i+1-j]), [[1,1]])
-                if mfld not in to_exclude:
+                if mfld.mp.dims not in to_exclude:
                     gens.append(mfld)
                 j+=1
         i += 1
