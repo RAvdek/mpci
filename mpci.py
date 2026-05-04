@@ -4,20 +4,55 @@ import math
 import pickle
 import sympy
 
+
+# Logging setup
 LOG_FORMAT = '%(asctime)s %(message)s'
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 LOGGER = logging.getLogger(__name__)
+
+
+# Cache for Chern numbers
 _SESSION_CHERN_MEMORY = dict()
+# Cache for partitions of integers
 _SESSION_PARTITIONS = dict()
+# Cache for Newton polynomial coefficients: maps n -> dict {partition: coeff}
+_SESSION_NEWTON_COEFFS = dict()
 _DB_FILENAME = "./_MPCI_MEMORY.pk"
 
 # These internal functions store computations of chern numbers
+
+def load_memory():
+    try:
+        with open(_DB_FILENAME, "rb") as f:
+            memory = pickle.load(f)
+        global _SESSION_CHERN_MEMORY
+        global _SESSION_PARTITIONS
+        global _SESSION_NEWTON_COEFFS
+        if "chern" in memory.keys():
+            _SESSION_CHERN_MEMORY = memory["chern"]
+        if "parts" in memory.keys():
+            _SESSION_PARTITIONS = memory["parts"]
+        if "newton" in memory.keys():
+            _SESSION_NEWTON_COEFFS = memory["newton"]
+    except OSError:
+        LOGGER.warning("No database file found. Use save_memory() at the end of your session to create one.")
+
+
+def save_memory():
+    with open(_DB_FILENAME, "wb") as f:
+        pickle.dump(
+            {
+                "chern": _SESSION_CHERN_MEMORY,
+                "parts": _SESSION_PARTITIONS,
+                "newton": _SESSION_NEWTON_COEFFS
+            }, f)
+
 
 def _get_chern_from_db(dims, degs):
     return _SESSION_CHERN_MEMORY.get((tuple(dims), tuple([tuple(d) for d in degs])))
 
 
-def _set_entry_in_db(dims, degs, chern_numbers=None):
+def _set_chern_in_db(dims, degs, chern_numbers=None):
     assert isinstance(chern_numbers, dict)
     if chern_numbers is not None:
         _SESSION_CHERN_MEMORY[(tuple(dims), tuple([tuple(d) for d in degs]))] = chern_numbers
@@ -26,22 +61,7 @@ def _set_entry_in_db(dims, degs, chern_numbers=None):
         _SESSION_CHERN_MEMORY[(tuple(dims), tuple([tuple(d) for d in degs]))] = dict()
 
 
-def load_memory():
-    try:
-        with open(_DB_FILENAME, "rb") as f:
-            memory = pickle.load(f)
-        global _SESSION_CHERN_MEMORY
-        global _SESSION_PARTITIONS
-        _SESSION_CHERN_MEMORY = memory["chern"]
-        _SESSION_PARTITIONS = memory["parts"]
-    except OSError:
-        LOGGER.warning("No database file found. Use save_memory() at the end of your session to create one.")
-
-
-def save_memory():
-    with open(_DB_FILENAME, "wb") as f:
-        pickle.dump({"chern": _SESSION_CHERN_MEMORY, "parts": _SESSION_PARTITIONS}, f)
-
+# Various numerical helper functions
 
 def e_2pii(num, denom):
     frac = sympy.Rational(num, denom) * 2 * sympy.pi
@@ -54,6 +74,74 @@ def get_bernoulli(n):
     if n == 0:
         return 1
     return int(-((-1)**n)) * sympy.bernoulli(2 * n)
+
+
+def get_newton_coeffs(n):
+    """Compute the coefficients expressing s_n as a Z-linear combination
+    of Chern numbers c_I, where I ranges over partitions of n.
+
+    Uses Newton's identities:
+        s_1 = c_1
+        s_k = c_1*s_{k-1} - c_2*s_{k-2} + ... + (-1)^{k-1} * k * c_k
+
+    Returns a dict {partition: coefficient} such that
+        s_n[M] = sum_{I partition of n} coefficient(I) * c_I[M]
+
+    DERIVATION: Each s_k is a polynomial in c_1, ..., c_k of weighted degree k
+    (where deg(c_j) = j). When we expand s_n as a sum of monomials
+    c_1^{a_1} * c_2^{a_2} * ... * c_n^{a_n} with sum(j * a_j) = n,
+    each such monomial corresponds to the partition I where j appears a_j times.
+    The Chern number c_I[M] is the integral of this monomial over [M].
+    """
+    if n in _SESSION_NEWTON_COEFFS:
+        return _SESSION_NEWTON_COEFFS[n]
+
+    c_symbols = {i: sympy.Symbol(f'c{i}') for i in range(1, n + 1)}
+    s = {}
+    s[1] = c_symbols[1]
+    for k in range(2, n + 1):
+        val = 0
+        for j in range(1, k):
+            val += (-1) ** (j - 1) * c_symbols[j] * s[k - j]
+        val += (-1) ** (k - 1) * k * c_symbols[k]
+        s[k] = sympy.expand(val)
+
+    sn_poly = sympy.Poly(s[n], *[c_symbols[i] for i in range(1, n + 1)])
+    coeffs = {}
+    for monom, coeff in zip(sn_poly.monoms(), sn_poly.coeffs()):
+        partition = []
+        for j in range(n):
+            k = j + 1
+            partition.extend([k] * monom[j])
+        partition = tuple(sorted(partition))
+        coeffs[partition] = int(coeff)
+
+    _SESSION_NEWTON_COEFFS[n] = coeffs
+    return coeffs
+
+
+def extended_gcd_list(values):
+    """Given a list of integers [v_0, v_1, ..., v_m], find integer coefficients
+    [a_0, a_1, ..., a_m] such that sum(a_i * v_i) = gcd(v_0, ..., v_m).
+
+    Uses iterative application of the extended Euclidean algorithm.
+    Returns (gcd_value, coefficients_list).
+    """
+    if len(values) == 0:
+        raise ValueError("Empty list")
+    if len(values) == 1:
+        sign = 1 if values[0] >= 0 else -1
+        return abs(values[0]), [sign]
+
+    s, t, g = sympy.gcdex(values[0], values[1])
+    coeffs = [int(s), int(t)]
+
+    for i in range(2, len(values)):
+        s_new, t_new, g_new = sympy.gcdex(g, values[i])
+        coeffs = [int(s_new) * c for c in coeffs] + [int(t_new)]
+        g = g_new
+
+    return int(g), coeffs
 
 
 def l_series_func(n):
@@ -452,7 +540,7 @@ class CompIntersection(object):
         db_data = _get_chern_from_db(self.mp.dims, self.degs)
         if db_data is None:
             # If there is no database entry, create it
-            _set_entry_in_db(self.mp.dims, self.degs, dict())
+            _set_chern_in_db(self.mp.dims, self.degs, dict())
             return False
         else:
             if partition is None:
@@ -481,6 +569,11 @@ class CompIntersection(object):
                    [[0]*len(self.mp.dims) + d for d in other_ci.degs]
         return CompIntersection(MultiProj(out_dims), out_degs)
 
+    def integrate(self, c):
+        """Integrate a polynomial over the complete intersection"""
+        big_c = c * self.chern_normal
+        return self.mp.integrate(big_c)
+
     def get_mth_chern(self, m):
         """Get the mth Chern class, expressed as a class coming from the ambient projective space"""
         return self.mp.get_mth(self.chern, m)
@@ -499,66 +592,215 @@ class CompIntersection(object):
         output = self.integrate(chern_part)
         return output
 
+    def _try_split_as_product(self):
+        """Try to decompose this CompIntersection as a product X x Y.
+
+        A complete intersection in CP^{d_1} x ... x CP^{d_m} defined by
+        equations of multi-degrees degs is a product X x Y if the index set
+        {0, ..., m-1} can be partitioned into two non-empty subsets S, T such
+        that every defining equation has degree 0 in all indices of S or all
+        indices of T. Equivalently, we look for connected components in the
+        bipartite incidence graph between ambient factors and defining equations.
+
+        Returns (X, Y) as CompIntersection objects if a splitting exists,
+        or None if the variety is irreducible (cannot be split as a product).
+        """
+        m = len(self.mp.dims)
+        if m < 2:
+            return None
+
+        # Build adjacency: which ambient factors are linked by shared equations?
+        # Two factors i, j are linked if some equation has nonzero degree in both.
+        # We find connected components via union-find.
+        parent = list(range(m))
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        def union(x, y):
+            px, py = find(x), find(y)
+            if px != py:
+                parent[px] = py
+
+        for deg in self.degs:
+            # Find all factors with nonzero degree in this equation
+            nonzero = [i for i in range(m) if deg[i] != 0]
+            # Link them all together
+            for i in range(1, len(nonzero)):
+                union(nonzero[0], nonzero[i])
+
+        # Check if there are multiple connected components
+        components = {}
+        for i in range(m):
+            root = find(i)
+            if root not in components:
+                components[root] = []
+            components[root].append(i)
+
+        if len(components) < 2:
+            return None
+
+        # Split into two groups: first component vs. everything else
+        comp_list = list(components.values())
+        group_S = comp_list[0]
+        group_T = []
+        for comp in comp_list[1:]:
+            group_T.extend(comp)
+
+        # Build the two factor CompIntersections
+        dims_S = [self.mp.dims[i] for i in group_S]
+        dims_T = [self.mp.dims[i] for i in group_T]
+
+        degs_S = []
+        degs_T = []
+        for deg in self.degs:
+            if any(deg[i] != 0 for i in group_S):
+                # This equation involves S-factors
+                degs_S.append([deg[i] for i in group_S])
+            else:
+                # This equation involves T-factors
+                degs_T.append([deg[i] for i in group_T])
+
+        X = CompIntersection(MultiProj(dims_S), degs_S)
+        Y = CompIntersection(MultiProj(dims_T), degs_T)
+        return (X, Y)
+
+    def get_all_chern_numbers_of_product(self, other):
+        """Compute Chern numbers of self x other from Chern numbers of the factors.
+
+        MATHEMATICAL BACKGROUND:
+        For M^{2a} x N^{2b}, the Whitney sum formula gives
+            c_k(M x N) = sum_{i+j=k} c_i(M) * c_j(N).
+
+        For a Chern number c_I(M x N) with I = (i_1,...,i_r) and |I| = a + b,
+        we expand each factor c_{i_ell}(M x N) = sum_{p+q=i_ell} c_p(M)*c_q(N),
+        take the product over all ell, and integrate over [M x N].
+
+        By the Kunneth theorem, the integral factors:
+            int_{M x N} alpha_M * beta_N = (int_M alpha_M) * (int_N beta_N).
+
+        So the M-parts must have total degree a and the N-parts total degree b.
+        The formula is:
+
+            c_I(M x N) = sum         c_{I_M}[M] * c_{I_N}[N]
+                          splittings
+
+        where the sum ranges over all ways to choose p_ell + q_ell = i_ell
+        for each ell = 1,...,r, subject to sum(p_ell) = a and sum(q_ell) = b.
+        Here I_M is the partition obtained from (p_1,...,p_r) by dropping zeros
+        and sorting, and similarly for I_N from (q_1,...,q_r).
+
+        :param other: CompIntersection whose Chern numbers are known or computable
+        :returns: dict mapping partitions of (self.total_dim + other.total_dim)
+                  to Chern number values
+        """
+        a = self.total_dim
+        b = other.total_dim
+        n = a + b
+
+        cn_self = self.get_all_chern_numbers()
+        cn_other = other.get_all_chern_numbers()
+
+        upper_parts = all_partitions(n)
+        output = {p: 0 for p in upper_parts}
+
+        for part in upper_parts:
+            r = len(part)
+            # For each entry i_ell in the partition, we choose p_ell in [0, i_ell].
+            # We need sum(p_ell) = a.
+            # Iterate over all such choices using itertools.product of ranges.
+            ranges = [range(part[ell] + 1) for ell in range(r)]
+            for p_tuple in itertools.product(*ranges):
+                if sum(p_tuple) != a:
+                    continue
+                # Build I_M and I_N from the splitting
+                q_tuple = tuple(part[ell] - p_tuple[ell] for ell in range(r))
+
+                I_M = tuple(sorted([p for p in p_tuple if p > 0]))
+                I_N = tuple(sorted([q for q in q_tuple if q > 0]))
+
+                # Check dimensions match (should always hold given sum constraint)
+                if sum(I_M) != a or sum(I_N) != b:
+                    continue
+
+                # Look up Chern numbers; skip if partition is empty (= dimension 0)
+                cn_M_val = cn_self[I_M] if len(I_M) > 0 else 1
+                cn_N_val = cn_other[I_N] if len(I_N) > 0 else 1
+
+                output[part] += cn_M_val * cn_N_val
+
+        return output
+
     def get_all_chern_numbers(self, log=False):
-        """Get all Chern numbers"""
+        """Get all Chern numbers of this complete intersection.
+
+        Strategy (in order of preference):
+        1. Look up cached values in _SESSION_CHERN_MEMORY.
+        2. Try to split as a product X x Y using connected components of the
+           factor-equation incidence graph. If successful, recursively compute
+           Chern numbers of X and Y, then combine using the general product
+           formula (get_all_chern_numbers_of_product).
+        3. Fall back to direct computation via polynomial arithmetic in the
+           ambient multi-projective space.
+        """
         if log:
             LOGGER.info(f"Get all Chern numbers for {self}")
         if self._has_key_in_memory():
             data = _get_chern_from_db(self.mp.dims, self.degs)
             if data is not None:
-                # this is a bad pattern, but I need a quick fix
                 if len(data.keys()) > 0:
                     return data
-        all_parts = all_partitions(self.total_dim)
         all_chern_numbers = dict()
-        # If self is P1 x Z with use Z.get_all_chern_numbers_times_P1()
-        # This applies recursion and should make things much faster
-        if len(self.mp.dims) > 1:
-            # try to find a P1 factor we can split off
-            p1_indices = [i for i in range(len(self.mp.dims)) if self.mp.dims[i]==1]
-            if len(p1_indices) > 0:
-                for i in p1_indices:
-                    if all([d[i] == 0 for d in self.degs]):
-                        new_dims = list(self.mp.dims[:])
-                        new_degs = list(self.degs)
-                        new_dims.pop(i)
-                        for d in new_degs:
-                            d.pop(i)
-                        all_chern_numbers = CompIntersection(
-                            MultiProj(new_dims), new_degs).get_all_chern_numbers_times_p1()
-                        _set_entry_in_db(self.mp.dims, self.degs, all_chern_numbers)
-                        return all_chern_numbers
+        # Try to split as a product and use recursion
+        split = self._try_split_as_product()
+        if split is not None:
+            X, Y = split
+            all_chern_numbers = X.get_all_chern_numbers_of_product(Y)
+            _set_chern_in_db(self.mp.dims, self.degs, all_chern_numbers)
+            return all_chern_numbers
+        # Fall back to direct computation
+        all_parts = all_partitions(self.total_dim)
         for part in all_parts:
             all_chern_numbers[part] = self.get_chern_number(part)
-        _set_entry_in_db(self.mp.dims, self.degs, all_chern_numbers)
+        _set_chern_in_db(self.mp.dims, self.degs, all_chern_numbers)
         return all_chern_numbers
 
-    def get_all_chern_numbers_times_p1(self):
-        """Find all of the self times P1. This gives an easy way to speed up computations
-        The explicit formula we're leveraging is that for I = (I_1,...,I_k)
+    def get_s_number(self):
+        """Compute the Milnor s-number s_n[M] where n = self.total_dim.
 
-        c_I(P1 x M) = 2(c_{I_1 - 1,I2,..,I_K}(M) + ... + c_{I_1,I2,..,I_K-1}(M))
+        The s-number is defined via Newton's identities relating power sum
+        symmetric functions to elementary symmetric functions (= Chern classes):
+
+            s_1 = c_1
+            s_k = c_1*s_{k-1} - c_2*s_{k-2} + ... + (-1)^{k-1} * k * c_k
+
+        Then s_n[M] = sum_{I partition of n} coeff(I) * c_I[M],
+        where the coefficients are determined by expanding s_n as a polynomial
+        in the Chern classes.
+
+        KEY PROPERTIES:
+        - s_n(CP^n) = n+1
+        - s_n(H_{r,s}) = -binom(r+s, r) for the Milnor hypersurface H_{r,s}
+          (the (1,1)-divisor in CP^r x CP^s) of dimension r+s-1 = n.
+        - s_n(M x N) = 0 when dim_C(M) > 0 and dim_C(N) > 0.
         """
-        upper_parts = all_partitions(self.total_dim + 1)
-        all_chern_numbers = self.get_all_chern_numbers()
-        output = {p: 0 for p in upper_parts}
-        for part in upper_parts:
-            for i in range(len(part)):
-                # copy the partition so it can be modified
-                modified_part = list(part[:])
-                modified_part[i] -= 1
-                modified_part = tuple(sorted([x for x in modified_part if x > 0]))
-                try:
-                    output[part] += 2 * all_chern_numbers[tuple(sorted(modified_part))]
-                except  KeyError as e:
-                    LOGGER.info(f"Keyerror for get_all_chern_numbers_times_p1 of {self}")
-                    raise e
-        return output
-
-    def integrate(self, c):
-        """Integrate a polynomial over the complete intersection"""
-        big_c = c * self.chern_normal
-        return self.mp.integrate(big_c)
+        n = self.total_dim
+        if n < 1:
+            raise ValueError("s-number not defined for dimension 0")
+        newton_coeffs = get_newton_coeffs(n)
+        chern_numbers = self.get_all_chern_numbers()
+        result = 0
+        try:
+            for partition, coeff in newton_coeffs.items():
+                result += coeff * chern_numbers[partition]
+            return result
+        except AttributeError as e:
+            print(newton_coeffs)
+            print(self)
+            raise e
 
     def get_chern_numbers_branched(self, branch_deg, branch_order, verbose=False):
         """Use Izawas formula to compute Chern numbers of the variety obtained by branching the complete intersection
@@ -791,4 +1033,220 @@ def get_euler_only(n, su=False):
                 sum(v[i] * chern_numbers[str(upper_gens[i])][_EULER_INDEX] for i in range(len(upper_gens)))
                 for v in nullspace
             ]
+    return abs(sympy.gcd(eulers))
+
+# =============================================================================
+# Polynomial generators and minimal additive basis of Omega^U_{2n}
+# =============================================================================
+
+_SESSION_COB_GENERATORS = dict()
+
+def _set_cob_poly_gen_in_db(n, poly_gen):
+    assert all([mfld.total_dim==n for (coeff, mfld) in poly_gen])
+    data = [(coeff, mfld.mp.dims, mfld.degs) for (coeff, mfld) in poly_gen]
+    _SESSION_COB_GENERATORS[n] = data
+
+def _get_cob_poly_gen_from_db(n):
+    data = _SESSION_COB_GENERATORS[n]
+    return [(coeff, CompIntersection(MultiProj(dims=dims), degs=degs)) for (coeff, dims, degs) in data]
+
+
+# helper method currently used only inside of this function
+def _is_prime_power(m):
+    """Check if m >= 2 is a prime power p^k with k >= 1.
+    Returns (True, p, k) if so, (False, None, None) otherwise.
+    """
+    if m < 2:
+        return False, None, None
+    f = sympy.factorint(m)
+    if len(f) == 1:
+        p, k = list(f.items())[0]
+        return True, p, k
+    return False, None, None
+
+
+def get_cobordism_polynomial_generator(n, log=False):
+    """Return a polynomial generator x_n of Omega^U_* in complex dimension n.
+
+    The result is a list of (coefficient, CompIntersection) pairs representing
+    a formal Z-linear combination of manifolds:
+
+        x_n = sum_i  a_i * [M_i]   in Omega^U_{2n}
+
+    such that x_n satisfies Milnor's criterion for a polynomial generator:
+      - If n+1 = p^k (prime power), then s_n(x_n) = +/-p.
+      - If n+1 is NOT a prime power, then s_n(x_n) = +/-1.
+
+    NOTE: The criterion is s_n = +/-p (exactly), NOT merely v_p(s_n) = 1.
+    See Milnor-Stasheff "Characteristic Classes" Appendix B, Theorem 2.
+
+    GENERATOR CHOICES:
+      (a) If n+1 is prime: x_n = CP^n, since s_n(CP^n) = n+1 = p. Single term.
+      (b) Otherwise: we form a minimal Z-linear combination of CP^n and
+          Milnor hypersurfaces H_{r, n+1-r} (for 2 <= r <= floor((n+1)/2))
+          such that s_n(x_n) equals the target value (+/-p or +/-1).
+
+    AVAILABLE s-NUMBERS:
+      s_n(CP^n) = n+1
+      s_n(H_{r,s}) = -binom(n+1, r) for H_{r,s} with r+s = n+1, r >= 2
+
+    When n+1 = p^k, all of these are divisible by p (Kummer's theorem), so gcd = p.
+    When n+1 is not a prime power, gcd = 1.
+    We find the combination using the extended Euclidean algorithm.
+    """
+    if n in _SESSION_COB_GENERATORS.keys():
+        return _get_cob_poly_gen_from_db(n)
+
+    is_pp, p, k = _is_prime_power(n + 1)
+
+    if is_pp and k == 1:
+        cpn = CompIntersection(MultiProj([n]), [])
+        if log:
+            LOGGER.info(f"dim {n}: x_{n} = CP^{n}, s_{n} = {n+1} (prime)")
+        result = [(1, cpn)]
+        _set_cob_poly_gen_in_db(n, result)
+        return result
+
+    manifolds = [CompIntersection(MultiProj([n]), [])]
+    s_values = [n + 1]
+
+    for r in range(2, (n + 1) // 2 + 1):
+        s = n + 1 - r
+        manifolds.append(CompIntersection(MultiProj([r, s]), [[1, 1]]))
+        s_values.append(-int(sympy.binomial(n + 1, r)))
+
+    g, coeffs = extended_gcd_list(s_values)
+
+    if is_pp:
+        assert g == p, (
+            f"GCD of s-numbers is {g}, expected {p} for n+1={n+1}={p}^{k}")
+    else:
+        assert g == 1, (
+            f"GCD of s-numbers is {g}, expected 1 for n+1={n+1} not a prime power")
+
+    result = [(int(c), m) for c, m in zip(coeffs, manifolds) if c != 0]
+
+    _set_cob_poly_gen_in_db(n, result)
+
+    if log:
+        sn_check = sum(c * sv for c, sv in zip(coeffs, s_values))
+        terms = [f"{c}*[{m}]" for c, m in result]
+        LOGGER.info(f"dim {n}: x_{n} = {' + '.join(terms)}, s_{n} = {sn_check}")
+
+    return result
+
+
+def get_additive_cob_gens_v2(n, log=False):
+    """Compute a Z-basis of Omega^U_{2n} using polynomial generators.
+
+    Returns (partitions_list, basis_list) where:
+      - partitions_list: sorted list of partitions of n (one per basis element)
+      - basis_list: list of cobordism classes, each a list of (coeff, CompIntersection)
+
+    MATHEMATICAL DESCRIPTION:
+    Let x_1, x_2, ..., x_n be polynomial generators of Omega^U_* chosen by
+    get_polynomial_generator(). A Z-basis of Omega^U_{2n} consists of all
+    monomials x_{i_1} * ... * x_{i_k} with i_1 <= ... <= i_k and
+    i_1 + ... + i_k = n. There are p(n) such monomials.
+
+    Each monomial x_{i_1} * ... * x_{i_k} is expanded by multilinearity:
+    if x_{i_j} = sum_l a_{jl} M_{jl}, then the product is
+        sum_{l_1,...,l_k} (prod_j a_{j,l_j}) * (M_{1,l_1} x ... x M_{k,l_k})
+    """
+    if log:
+        LOGGER.info(f"Computing additive generators for dim {n}")
+
+    poly_gens = {}
+    for m in range(1, n + 1):
+        poly_gens[m] = get_cobordism_polynomial_generator(m, log=log)
+
+    parts = sorted(all_partitions(n))
+    basis = []
+
+    for part in parts:
+        if log:
+            LOGGER.info(f"  Building basis element for partition {part}")
+
+        current = [(c, m) for c, m in poly_gens[part[0]]]
+        for idx in range(1, len(part)):
+            factor = poly_gens[part[idx]]
+            new_current = []
+            for c1, m1 in current:
+                for c2, m2 in factor:
+                    new_current.append((c1 * c2, m1.get_product(m2)))
+            current = new_current
+        basis.append(current)
+
+    assert len(basis) == len(parts)
+    return parts, basis
+
+
+def get_cob_gen_chern_numbers(n, log=False):
+    """Compute the Chern number matrix for a Z-basis of Omega^U_{2n}.
+
+    Returns (cn_parts, basis_partitions, chern_matrix) where:
+      - cn_parts: sorted list of partitions of n (Chern number indices)
+      - basis_partitions: sorted list of partitions of n (basis element labels)
+      - chern_matrix: list of dicts, one per basis element, mapping
+        Chern number partitions to integer values.
+
+    Each basis element is a Z-linear combination sum_j a_j [M_j], so its
+    Chern numbers are sum_j a_j * c_I(M_j) for each partition I.
+    """
+    basis_partitions, basis = get_additive_cob_gens_v2(n, log=log)
+    cn_parts = sorted(all_partitions(n))
+    chern_matrix = []
+
+    for i, (basis_part, cobordism_class) in enumerate(zip(basis_partitions, basis)):
+        if log:
+            LOGGER.info(f"  Computing Chern numbers for basis element {basis_part}")
+        cn_dict = {p: 0 for p in cn_parts}
+        for coeff, manifold in cobordism_class:
+            mfld_cn = manifold.get_all_chern_numbers(log=log)
+            for p in cn_parts:
+                cn_dict[p] += coeff * mfld_cn[p]
+        chern_matrix.append(cn_dict)
+
+    return cn_parts, basis_partitions, chern_matrix
+
+
+def get_euler_only_v2(n, log=False):
+    """Compute M_{2n}: the GCD of c_{(n)}(X) over all X in T_{2n}.
+
+    Here T_{2n} is the subgroup of Omega^U_{2n} defined by
+        c_I(X) = 0 for all partitions I of n with I != (n).
+
+    ALGORITHM:
+    1. Compute a Z-basis of Omega^U_{2n} and their Chern numbers.
+    2. Form the matrix M whose rows are the Chern numbers c_I for I != (n),
+       one column per basis element.
+    3. Compute the integer kernel of M (= the subgroup T_{2n}).
+    4. For each kernel vector, compute c_{(n)} and return the GCD.
+    """
+    assert n > 1
+    cn_parts, basis_partitions, chern_matrix = get_cob_gen_chern_numbers(n, log=log)
+
+    _EULER_INDEX = (n,)
+    non_euler_parts = [p for p in cn_parts if p != _EULER_INDEX]
+    m = []
+    for cn_dict in chern_matrix:
+        m.append([cn_dict[p] for p in non_euler_parts])
+
+    if log:
+        LOGGER.info(f"Constraint matrix: {len(m)} rows x {len(non_euler_parts)} cols")
+        LOGGER.info("Computing integer nullspace...")
+
+    nullspace = get_z_kernel(m, transpose=True)
+
+    if log:
+        LOGGER.info(f"Nullspace has {len(nullspace)} vectors")
+
+    eulers = []
+    for v in nullspace:
+        euler = sum(v[i] * chern_matrix[i][_EULER_INDEX] for i in range(len(chern_matrix)))
+        eulers.append(euler)
+
+    if log:
+        LOGGER.info(f"Euler values: {eulers}")
+
     return abs(sympy.gcd(eulers))
