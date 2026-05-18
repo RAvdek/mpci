@@ -88,7 +88,7 @@ print("=" * 70)
 print("POLYNOMIAL GENERATORS")
 print("=" * 70)
 for n in range(1, N_MAX + 1):
-    gen = mpci.get_polynomial_generator(n)
+    gen = mpci.get_cobordism_polynomial_generator(n)
     s_val = sum(c * m.get_s_number() for c, m in gen)
     is_pp, p, k = mpci._is_prime_power(n + 1)
     if is_pp:

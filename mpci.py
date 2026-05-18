@@ -592,200 +592,181 @@ class CompIntersection(object):
         output = self.integrate(chern_part)
         return output
 
+    def _try_split_as_product(self):
+        """Try to decompose this CompIntersection as a product X x Y.
+
+        A complete intersection in CP^{d_1} x ... x CP^{d_m} defined by
+        equations of multi-degrees degs is a product X x Y if the index set
+        {0, ..., m-1} can be partitioned into two non-empty subsets S, T such
+        that every defining equation has degree 0 in all indices of S or all
+        indices of T. Equivalently, we look for connected components in the
+        bipartite incidence graph between ambient factors and defining equations.
+
+        Returns (X, Y) as CompIntersection objects if a splitting exists,
+        or None if the variety is irreducible (cannot be split as a product).
+        """
+        m = len(self.mp.dims)
+        if m < 2:
+            return None
+
+        # Build adjacency: which ambient factors are linked by shared equations?
+        # Two factors i, j are linked if some equation has nonzero degree in both.
+        # We find connected components via union-find.
+        parent = list(range(m))
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        def union(x, y):
+            px, py = find(x), find(y)
+            if px != py:
+                parent[px] = py
+
+        for deg in self.degs:
+            # Find all factors with nonzero degree in this equation
+            nonzero = [i for i in range(m) if deg[i] != 0]
+            # Link them all together
+            for i in range(1, len(nonzero)):
+                union(nonzero[0], nonzero[i])
+
+        # Check if there are multiple connected components
+        components = {}
+        for i in range(m):
+            root = find(i)
+            if root not in components:
+                components[root] = []
+            components[root].append(i)
+
+        if len(components) < 2:
+            return None
+
+        # Split into two groups: first component vs. everything else
+        comp_list = list(components.values())
+        group_S = comp_list[0]
+        group_T = []
+        for comp in comp_list[1:]:
+            group_T.extend(comp)
+
+        # Build the two factor CompIntersections
+        dims_S = [self.mp.dims[i] for i in group_S]
+        dims_T = [self.mp.dims[i] for i in group_T]
+
+        degs_S = []
+        degs_T = []
+        for deg in self.degs:
+            if any(deg[i] != 0 for i in group_S):
+                # This equation involves S-factors
+                degs_S.append([deg[i] for i in group_S])
+            else:
+                # This equation involves T-factors
+                degs_T.append([deg[i] for i in group_T])
+
+        X = CompIntersection(MultiProj(dims_S), degs_S)
+        Y = CompIntersection(MultiProj(dims_T), degs_T)
+        return (X, Y)
+
+    def get_all_chern_numbers_of_product(self, other):
+        """Compute Chern numbers of self x other from Chern numbers of the factors.
+
+        MATHEMATICAL BACKGROUND:
+        For M^{2a} x N^{2b}, the Whitney sum formula gives
+            c_k(M x N) = sum_{i+j=k} c_i(M) * c_j(N).
+
+        For a Chern number c_I(M x N) with I = (i_1,...,i_r) and |I| = a + b,
+        we expand each factor c_{i_ell}(M x N) = sum_{p+q=i_ell} c_p(M)*c_q(N),
+        take the product over all ell, and integrate over [M x N].
+
+        By the Kunneth theorem, the integral factors:
+            int_{M x N} alpha_M * beta_N = (int_M alpha_M) * (int_N beta_N).
+
+        So the M-parts must have total degree a and the N-parts total degree b.
+        The formula is:
+
+            c_I(M x N) = sum         c_{I_M}[M] * c_{I_N}[N]
+                          splittings
+
+        where the sum ranges over all ways to choose p_ell + q_ell = i_ell
+        for each ell = 1,...,r, subject to sum(p_ell) = a and sum(q_ell) = b.
+        Here I_M is the partition obtained from (p_1,...,p_r) by dropping zeros
+        and sorting, and similarly for I_N from (q_1,...,q_r).
+
+        :param other: CompIntersection whose Chern numbers are known or computable
+        :returns: dict mapping partitions of (self.total_dim + other.total_dim)
+                  to Chern number values
+        """
+        a = self.total_dim
+        b = other.total_dim
+        n = a + b
+
+        cn_self = self.get_all_chern_numbers()
+        cn_other = other.get_all_chern_numbers()
+
+        upper_parts = all_partitions(n)
+        output = {p: 0 for p in upper_parts}
+
+        for part in upper_parts:
+            r = len(part)
+            # For each entry i_ell in the partition, we choose p_ell in [0, i_ell].
+            # We need sum(p_ell) = a.
+            # Iterate over all such choices using itertools.product of ranges.
+            ranges = [range(part[ell] + 1) for ell in range(r)]
+            for p_tuple in itertools.product(*ranges):
+                if sum(p_tuple) != a:
+                    continue
+                # Build I_M and I_N from the splitting
+                q_tuple = tuple(part[ell] - p_tuple[ell] for ell in range(r))
+
+                I_M = tuple(sorted([p for p in p_tuple if p > 0]))
+                I_N = tuple(sorted([q for q in q_tuple if q > 0]))
+
+                # Check dimensions match (should always hold given sum constraint)
+                if sum(I_M) != a or sum(I_N) != b:
+                    continue
+
+                # Look up Chern numbers; skip if partition is empty (= dimension 0)
+                cn_M_val = cn_self[I_M] if len(I_M) > 0 else 1
+                cn_N_val = cn_other[I_N] if len(I_N) > 0 else 1
+
+                output[part] += cn_M_val * cn_N_val
+
+        return output
+
     def get_all_chern_numbers(self, log=False):
-        """Get all Chern numbers"""
+        """Get all Chern numbers of this complete intersection.
+
+        Strategy (in order of preference):
+        1. Look up cached values in _SESSION_CHERN_MEMORY.
+        2. Try to split as a product X x Y using connected components of the
+           factor-equation incidence graph. If successful, recursively compute
+           Chern numbers of X and Y, then combine using the general product
+           formula (get_all_chern_numbers_of_product).
+        3. Fall back to direct computation via polynomial arithmetic in the
+           ambient multi-projective space.
+        """
         if log:
             LOGGER.info(f"Get all Chern numbers for {self}")
         if self._has_key_in_memory():
             data = _get_chern_from_db(self.mp.dims, self.degs)
             if data is not None:
-                # this is a bad pattern, but I need a quick fix
                 if len(data.keys()) > 0:
                     return data
-        all_parts = all_partitions(self.total_dim)
         all_chern_numbers = dict()
-        # If self is P^k x Z, try to split off the P^k factor and use a recursion.
-        # This avoids expensive polynomial arithmetic in the ambient multi-projective space.
-        # We check for P^1 first (cheapest recursion), then P^2.
-        if len(self.mp.dims) > 1:
-            # try to find a P^1 factor we can split off
-            p1_indices = [i for i in range(len(self.mp.dims)) if self.mp.dims[i]==1]
-            if len(p1_indices) > 0:
-                for i in p1_indices:
-                    if all([d[i] == 0 for d in self.degs]):
-                        new_dims = list(self.mp.dims[:])
-                        new_degs = [list(d) for d in self.degs]
-                        new_dims.pop(i)
-                        for d in new_degs:
-                            d.pop(i)
-                        all_chern_numbers = CompIntersection(
-                            MultiProj(new_dims), new_degs).get_all_chern_numbers_times_p1()
-                        _set_chern_in_db(self.mp.dims, self.degs, all_chern_numbers)
-                        return all_chern_numbers
-            # try to find a P^2 factor we can split off
-            p2_indices = [i for i in range(len(self.mp.dims)) if self.mp.dims[i]==2]
-            if len(p2_indices) > 0:
-                for i in p2_indices:
-                    if all([d[i] == 0 for d in self.degs]):
-                        new_dims = list(self.mp.dims[:])
-                        new_degs = [list(d) for d in self.degs]
-                        new_dims.pop(i)
-                        for d in new_degs:
-                            d.pop(i)
-                        all_chern_numbers = CompIntersection(
-                            MultiProj(new_dims), new_degs).get_all_chern_numbers_times_p2()
-                        _set_chern_in_db(self.mp.dims, self.degs, all_chern_numbers)
-                        return all_chern_numbers
-            # try to find a P^3 factor we can split off
-            p3_indices = [i for i in range(len(self.mp.dims)) if self.mp.dims[i]==3]
-            if len(p3_indices) > 0:
-                for i in p3_indices:
-                    if all([d[i] == 0 for d in self.degs]):
-                        new_dims = list(self.mp.dims[:])
-                        new_degs = [list(d) for d in self.degs]
-                        new_dims.pop(i)
-                        for d in new_degs:
-                            d.pop(i)
-                        all_chern_numbers = CompIntersection(
-                            MultiProj(new_dims), new_degs).get_all_chern_numbers_times_p3()
-                        _set_chern_in_db(self.mp.dims, self.degs, all_chern_numbers)
-                        return all_chern_numbers
+        # Try to split as a product and use recursion
+        split = self._try_split_as_product()
+        if split is not None:
+            X, Y = split
+            all_chern_numbers = X.get_all_chern_numbers_of_product(Y)
+            _set_chern_in_db(self.mp.dims, self.degs, all_chern_numbers)
+            return all_chern_numbers
+        # Fall back to direct computation
+        all_parts = all_partitions(self.total_dim)
         for part in all_parts:
             all_chern_numbers[part] = self.get_chern_number(part)
         _set_chern_in_db(self.mp.dims, self.degs, all_chern_numbers)
         return all_chern_numbers
-
-    def get_all_chern_numbers_times_p1(self):
-        """Find all of the self times P1. This gives an easy way to speed up computations
-        The explicit formula we're leveraging is that for I = (I_1,...,I_k)
-
-        c_I(P1 x M) = 2(c_{I_1 - 1,I2,..,I_K}(M) + ... + c_{I_1,I2,..,I_K-1}(M))
-        """
-        upper_parts = all_partitions(self.total_dim + 1)
-        all_chern_numbers = self.get_all_chern_numbers()
-        output = {p: 0 for p in upper_parts}
-        for part in upper_parts:
-            for i in range(len(part)):
-                # copy the partition so it can be modified
-                modified_part = list(part[:])
-                modified_part[i] -= 1
-                modified_part = tuple(sorted([x for x in modified_part if x > 0]))
-                try:
-                    output[part] += 2 * all_chern_numbers[tuple(sorted(modified_part))]
-                except  KeyError as e:
-                    LOGGER.info(f"Keyerror for get_all_chern_numbers_times_p1 of {self}")
-                    raise e
-        return output
-
-    def get_all_chern_numbers_times_p2(self):
-        """Compute Chern numbers of CP^2 x M from those of M.
-
-        Uses the formula: c(CP^2 x M) = c(CP^2) * c(M) where
-        c(CP^2) = (1+h)^3 = 1 + 3h + 3h^2 with h^3 = 0.
-
-        So c_k(CP^2 x M) = c_k(M) + 3h * c_{k-1}(M) + 3h^2 * c_{k-2}(M).
-
-        For a Chern number c_I(CP^2 x M) with I = (i_1,...,i_k), |I| = dim(M) + 2,
-        we expand each factor and integrate over [CP^2 x M]. Since h^3 = 0,
-        only terms with total h-degree exactly 2 survive:
-
-        c_I(CP^2 x M) =
-          (a) sum_j 3 * c_{I with i_j -> i_j - 2}(M)    [one factor contributes h^2]
-          (b) + sum_{j<l} 9 * c_{I with i_j -> i_j-1     [two factors each contribute h^1]
-                                    and i_l -> i_l-1}(M)
-
-        Entries that become 0 are dropped (since c_0 = 1).
-        """
-        n = self.total_dim
-        upper_parts = all_partitions(n + 2)
-        all_chern_numbers = self.get_all_chern_numbers()
-        output = {p: 0 for p in upper_parts}
-        for part in upper_parts:
-            k = len(part)
-            # (a) One factor decremented by 2
-            for j in range(k):
-                if part[j] >= 2:
-                    modified = list(part)
-                    modified[j] -= 2
-                    modified = tuple(sorted([x for x in modified if x > 0]))
-                    if sum(modified) == n:
-                        output[part] += 3 * all_chern_numbers[modified]
-                # part[j] == 1 gives i_j - 2 = -1, which is invalid, so skip
-            # (b) Two factors each decremented by 1
-            for j in range(k):
-                for l in range(j + 1, k):
-                    modified = list(part)
-                    modified[j] -= 1
-                    modified[l] -= 1
-                    modified = tuple(sorted([x for x in modified if x > 0]))
-                    if sum(modified) == n:
-                        output[part] += 9 * all_chern_numbers[modified]
-        return output
-
-    def get_all_chern_numbers_times_p3(self):
-        """Compute Chern numbers of CP^3 x M from those of M.
-
-        Uses the formula: c(CP^3 x M) = c(CP^3) * c(M) where
-        c(CP^3) = (1+h)^4 = 1 + 4h + 6h^2 + 4h^3 with h^4 = 0.
-
-        So c_k(CP^3 x M) = c_k(M) + 4h*c_{k-1}(M) + 6h^2*c_{k-2}(M) + 4h^3*c_{k-3}(M).
-
-        For a Chern number c_I(CP^3 x M) with I = (i_1,...,i_k), |I| = dim(M) + 3,
-        we expand each factor and integrate over [CP^3 x M]. Since h^4 = 0,
-        only terms with total h-degree exactly 3 survive:
-
-        c_I(CP^3 x M) =
-          (a) sum_j 4 * c_{I with i_j -> i_j - 3}(M)
-              [one factor contributes 4*h^3]
-          (b) + sum_{j != l} 24 * c_{I with i_j -> i_j - 2 and i_l -> i_l - 1}(M)
-              [factor j contributes 6*h^2, factor l contributes 4*h; ordered pairs]
-          (c) + sum_{j < l < m} 64 * c_{I with i_j, i_l, i_m each -> -1}(M)
-              [three factors each contribute 4*h; unordered triples]
-
-        Entries that become 0 are dropped (since c_0 = 1).
-        Entries that become negative are invalid and skipped.
-        """
-        n = self.total_dim
-        upper_parts = all_partitions(n + 3)
-        all_chern_numbers = self.get_all_chern_numbers()
-        output = {p: 0 for p in upper_parts}
-        for part in upper_parts:
-            k = len(part)
-            # (a) One factor decremented by 3
-            for j in range(k):
-                if part[j] >= 3:
-                    modified = list(part)
-                    modified[j] -= 3
-                    modified = tuple(sorted([x for x in modified if x > 0]))
-                    if sum(modified) == n:
-                        output[part] += 4 * all_chern_numbers[modified]
-            # (b) Ordered pair (j, l) with j != l: j decremented by 2, l by 1
-            for j in range(k):
-                if part[j] < 2:
-                    continue
-                for l in range(k):
-                    if l == j:
-                        continue
-                    if part[l] < 1:
-                        continue
-                    modified = list(part)
-                    modified[j] -= 2
-                    modified[l] -= 1
-                    modified = tuple(sorted([x for x in modified if x > 0]))
-                    if sum(modified) == n:
-                        output[part] += 24 * all_chern_numbers[modified]
-            # (c) Unordered triple {j, l, m}: each decremented by 1
-            for j in range(k):
-                for l in range(j + 1, k):
-                    for m in range(l + 1, k):
-                        modified = list(part)
-                        modified[j] -= 1
-                        modified[l] -= 1
-                        modified[m] -= 1
-                        modified = tuple(sorted([x for x in modified if x > 0]))
-                        if sum(modified) == n:
-                            output[part] += 64 * all_chern_numbers[modified]
-        return output
 
     def get_s_number(self):
         """Compute the Milnor s-number s_n[M] where n = self.total_dim.
